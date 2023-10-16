@@ -1,0 +1,51 @@
+{
+  "name": "@fundswap/contracts",
+  "version": "1.0.0",
+  "license": "MIT",
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test --parallel",
+    "test:sequence": "hardhat test",
+    "coverage": "hardhat coverage",
+    "hh:node": "hardhat node",
+    "dev": "hardhat node",
+    "hh:clean": "hardhat clean",
+    "slither": "tsx tools/slither.ts",
+    "tsc": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@ethersproject/abi": "5.7.0",
+    "@ethersproject/providers": "5.7.2",
+    "@nomicfoundation/hardhat-chai-matchers": "2.0.1",
+    "@nomicfoundation/hardhat-ethers": "^3.0.0",
+    "@nomicfoundation/hardhat-network-helpers": "1.0.8",
+    "@nomicfoundation/hardhat-toolbox": "3.0.0",
+    "@nomicfoundation/hardhat-verify": "^1.0.3",
+    "@nomiclabs/hardhat-etherscan": "3.1.7",
+    "@typechain/ethers-v6": "^0.4.0",
+    "@typechain/hardhat": "8.0.0",
+    "@types/chai": "^4.3.5",
+    "@types/mocha": "^9.0.1",
+    "@types/node": "^18.16.0",
+    "chai": "^4.3.7",
+    "dotenv": "^16.3.1",
+    "ethers": "6.7.1",
+    "hardhat": "2.17.3",
+    "hardhat-deploy": "0.11.34",
+    "hardhat-diamond-abi": "^3.0.1",
+    "hardhat-gas-reporter": "1.0.9",
+    "prettier": "^2.8.8",
+    "solidity-coverage": "^0.8.3",
+    "ts-node": "^10.9.1",
+    "tsx": "^3.12.7",
+    "typechain": "8.2.0",
+    "typescript": "^5.1.3"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "4.9.2",
+    "@solidstate/contracts": "0.0.57",
+    "@solidstate/library": "0.0.57",
+    "@t3-oss/env-core": "^0.6.0",
+    "zod": "^3.21.4"
+  }
+}
