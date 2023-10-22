@@ -7,9 +7,8 @@ import { expect } from 'chai';
 
 describe('Orders with permit', () => {
   it('Should allow to create a public order with permit', async () => {
-    const { fundSwap, fundSwapOrderManager, erc20Token, wmaticToken } = await loadFixture(
-      prepareTestEnv,
-    );
+    const { fundSwap, fundSwapOrderManager, erc20Token, wmaticToken } =
+      await loadFixture(prepareTestEnv);
     const [user1] = await ethers.getSigners();
 
     const deadline = MAX_UINT256;
@@ -23,10 +22,10 @@ describe('Orders with permit', () => {
 
     await fundSwap.createPublicOrderWithPermit(
       {
-        offeredToken: erc20Token.getAddress(),
-        amountOffered: ethers.parseEther('1'),
-        wantedToken: wmaticToken.getAddress(),
-        amountWanted: ethers.parseEther('1'),
+        makerSellToken: erc20Token.getAddress(),
+        makerSellTokenAmount: ethers.parseEther('1'),
+        makerBuyToken: wmaticToken.getAddress(),
+        makerBuyTokenAmount: ethers.parseEther('1'),
         deadline: 0,
       },
       deadline,
@@ -38,17 +37,16 @@ describe('Orders with permit', () => {
     const tokenId = await fundSwapOrderManager.tokenOfOwnerByIndex(user1.getAddress(), 0);
     const order = await fundSwapOrderManager.getOrder(tokenId);
     expect(await fundSwapOrderManager.balanceOf(user1.getAddress())).to.equal(1);
-    expect(order.offeredToken).to.equal(await erc20Token.getAddress());
-    expect(order.amountOffered).to.equal(ethers.parseEther('1'));
-    expect(order.wantedToken).to.equal(await wmaticToken.getAddress());
-    expect(order.amountWanted).to.equal(ethers.parseEther('1'));
+    expect(order.makerSellToken).to.equal(await erc20Token.getAddress());
+    expect(order.makerSellTokenAmount).to.equal(ethers.parseEther('1'));
+    expect(order.makerBuyToken).to.equal(await wmaticToken.getAddress());
+    expect(order.makerBuyTokenAmount).to.equal(ethers.parseEther('1'));
     expect(order.deadline).to.equal(0);
   });
 
   it('Should allow to fill a particular public order with permit', async () => {
-    const { fundSwap, fundSwapOrderManager, erc20Token, wmaticToken } = await loadFixture(
-      prepareTestEnv,
-    );
+    const { fundSwap, fundSwapOrderManager, erc20Token, wmaticToken } =
+      await loadFixture(prepareTestEnv);
     const [user1, user2] = await ethers.getSigners();
 
     const erc20User1BalanceBefore = await erc20Token.balanceOf(user1.getAddress());
@@ -58,10 +56,10 @@ describe('Orders with permit', () => {
 
     await wmaticToken.approve(fundSwap.getAddress(), ethers.parseEther('1'));
     await fundSwap.createPublicOrder({
-      offeredToken: wmaticToken.getAddress(),
-      amountOffered: ethers.parseEther('1'),
-      wantedToken: erc20Token.getAddress(),
-      amountWanted: ethers.parseEther('1'),
+      makerSellToken: wmaticToken.getAddress(),
+      makerSellTokenAmount: ethers.parseEther('1'),
+      makerBuyToken: erc20Token.getAddress(),
+      makerBuyTokenAmount: ethers.parseEther('1'),
       deadline: 0,
     });
 
@@ -102,9 +100,8 @@ describe('Orders with permit', () => {
   });
 
   it('Should allow to fill by market with permit', async () => {
-    const { fundSwap, wmaticToken, usdcToken, fundSwapBatchExecutor } = await loadFixture(
-      prepareTestEnv,
-    );
+    const { fundSwap, wmaticToken, usdcToken, fundSwapBatchExecutor } =
+      await loadFixture(prepareTestEnv);
     const [user1, user2] = await ethers.getSigners();
 
     const wmaticUser1BalanceBefore = await wmaticToken.balanceOf(user1.getAddress());
@@ -114,17 +111,17 @@ describe('Orders with permit', () => {
 
     await wmaticToken.approve(fundSwap.getAddress(), ethers.parseEther('3'));
     await fundSwap.createPublicOrder({
-      offeredToken: wmaticToken.getAddress(),
-      amountOffered: ethers.parseEther('1'),
-      wantedToken: usdcToken.getAddress(),
-      amountWanted: ethers.parseUnits('1', 6),
+      makerSellToken: wmaticToken.getAddress(),
+      makerSellTokenAmount: ethers.parseEther('1'),
+      makerBuyToken: usdcToken.getAddress(),
+      makerBuyTokenAmount: ethers.parseUnits('1', 6),
       deadline: 0,
     });
     await fundSwap.createPublicOrder({
-      offeredToken: wmaticToken.getAddress(),
-      amountOffered: ethers.parseEther('2'),
-      wantedToken: usdcToken.getAddress(),
-      amountWanted: ethers.parseUnits('2', 6),
+      makerSellToken: wmaticToken.getAddress(),
+      makerSellTokenAmount: ethers.parseEther('2'),
+      makerBuyToken: usdcToken.getAddress(),
+      makerBuyTokenAmount: ethers.parseUnits('2', 6),
       deadline: 0,
     });
 
@@ -176,17 +173,16 @@ describe('Orders with permit', () => {
   });
 
   it('Fill partially a single order with permit', async () => {
-    const { fundSwap, fundSwapOrderManager, erc20Token, wmaticToken } = await loadFixture(
-      prepareTestEnv,
-    );
+    const { fundSwap, fundSwapOrderManager, erc20Token, wmaticToken } =
+      await loadFixture(prepareTestEnv);
     const [, user2] = await ethers.getSigners();
 
     await wmaticToken.approve(fundSwap.getAddress(), ethers.parseEther('1'));
     await fundSwap.createPublicOrder({
-      offeredToken: wmaticToken.getAddress(),
-      amountOffered: ethers.parseEther('1'),
-      wantedToken: erc20Token.getAddress(),
-      amountWanted: ethers.parseEther('1'),
+      makerSellToken: wmaticToken.getAddress(),
+      makerSellTokenAmount: ethers.parseEther('1'),
+      makerBuyToken: erc20Token.getAddress(),
+      makerBuyTokenAmount: ethers.parseEther('1'),
       deadline: 0,
     });
 
@@ -212,7 +208,7 @@ describe('Orders with permit', () => {
 
     expect(await fundSwapOrderManager.totalSupply()).to.be.equal(1);
     const order = await fundSwapOrderManager.getOrder(0);
-    expect(order.amountOffered).to.be.equal(ethers.parseEther('0.5'));
-    expect(order.amountWanted).to.be.equal(ethers.parseEther('0.5'));
+    expect(order.makerSellTokenAmount).to.be.equal(ethers.parseEther('0.5'));
+    expect(order.makerBuyTokenAmount).to.be.equal(ethers.parseEther('0.5'));
   });
 });

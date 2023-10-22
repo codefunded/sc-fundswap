@@ -1,16 +1,14 @@
 import { AddressLike, BigNumberish } from 'ethers';
 import {
   OrderFillRequestStruct,
-  PublicOrderWithIdStruct,
+  PublicOrderStruct,
 } from '../typechain-types/contracts/FundSwap';
 
 export type PublicOrder = {
-  [key in keyof PublicOrderWithIdStruct]: Awaited<
-    PublicOrderWithIdStruct[key]
-  > extends BigNumberish
+  [key in keyof PublicOrderStruct]: Awaited<PublicOrderStruct[key]> extends BigNumberish
     ? bigint
-    : AddressLike;
-};
+    : Awaited<AddressLike>;
+} & { id: bigint };
 
 export type FillRequest = {
   sourceToken: string;
@@ -26,16 +24,14 @@ export type FillRequest = {
     }
 );
 
-const calculatePrice = (order: PublicOrderWithIdStruct) => {
+const calculatePrice = (order: PublicOrder) => {
   const price =
-    ((order.amountWanted as bigint) * BigInt(1e18)) / (order.amountOffered as bigint);
+    ((order.makerBuyTokenAmount as bigint) * BigInt(1e18)) /
+    (order.makerSellTokenAmount as bigint);
   return price;
 };
 
-export const sortOrdersByPrice = (
-  order1: PublicOrderWithIdStruct,
-  order2: PublicOrderWithIdStruct,
-) => {
+export const sortOrdersByPrice = (order1: PublicOrder, order2: PublicOrder) => {
   const price1 = calculatePrice(order1);
   const price2 = calculatePrice(order2);
   return price1 < price2 ? -1 : 1;
@@ -53,8 +49,8 @@ interface Path {
 const mapOrderToExactInputFillRequest = (
   order: PublicOrder,
 ): BigNumberify<OrderFillRequestStruct> => ({
-  orderId: order.orderId,
-  amountIn: order.amountOffered,
+  orderId: order.id,
+  amountIn: order.makerSellTokenAmount,
 });
 
 /**
@@ -74,7 +70,8 @@ export const createTradeRoute = (
     const ordersForPair = [...orders]
       .filter(
         (order) =>
-          order.offeredToken === destinationToken && order.wantedToken === sourceToken,
+          order.makerSellToken === destinationToken &&
+          order.makerBuyToken === sourceToken,
       )
       .sort(sortOrdersByPrice);
     if (ordersForPair.length === 0) {
@@ -87,7 +84,7 @@ export const createTradeRoute = (
           return acc;
         }
 
-        if (acc.amountRemainingToFill < order.amountWanted) {
+        if (acc.amountRemainingToFill < order.makerBuyTokenAmount) {
           const partialOrder = mapOrderToExactInputFillRequest(order);
           partialOrder.amountIn = acc.amountRemainingToFill;
           return {
@@ -98,7 +95,7 @@ export const createTradeRoute = (
 
         return {
           route: [...acc.route, mapOrderToExactInputFillRequest(order)],
-          amountRemainingToFill: acc.amountRemainingToFill - order.amountWanted,
+          amountRemainingToFill: acc.amountRemainingToFill - order.makerBuyTokenAmount,
         };
       },
       {
@@ -118,7 +115,8 @@ export const createTradeRoute = (
     const ordersForPair = [...orders]
       .filter(
         (order) =>
-          order.offeredToken === destinationToken && order.wantedToken === sourceToken,
+          order.makerSellToken === destinationToken &&
+          order.makerBuyToken === sourceToken,
       )
       .sort(sortOrdersByPrice);
     if (ordersForPair.length === 0) {
@@ -131,7 +129,7 @@ export const createTradeRoute = (
           return acc;
         }
 
-        if (acc.amountRemainingToFill < order.amountOffered) {
+        if (acc.amountRemainingToFill < order.makerSellTokenAmount) {
           const partialOrder = mapOrderToExactInputFillRequest(order);
           partialOrder.amountIn = acc.amountRemainingToFill;
           return {
@@ -142,7 +140,7 @@ export const createTradeRoute = (
 
         return {
           route: [...acc.route, mapOrderToExactInputFillRequest(order)],
-          amountRemainingToFill: acc.amountRemainingToFill - order.amountOffered,
+          amountRemainingToFill: acc.amountRemainingToFill - order.makerSellTokenAmount,
         };
       },
       {

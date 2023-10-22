@@ -1,5 +1,5 @@
 import { ethers } from 'ethers';
-import { PrivateOrderStruct } from '../../typechain-types/contracts/FundSwap';
+import { PrivateOrderStruct } from '../../typechain-types/contracts/periphery/FundSwapPrivateOrderExecutor';
 
 export function hashOrder(
   order: PrivateOrderStruct,
@@ -20,12 +20,12 @@ export function hashOrder(
       ],
       [
         chainId,
-        order.creator,
+        order.maker,
         order.deadline,
-        order.offeredToken,
-        order.amountOffered,
-        order.wantedToken,
-        order.amountWanted,
+        order.makerSellToken,
+        order.makerSellTokenAmount,
+        order.makerBuyToken,
+        order.makerBuyTokenAmount,
         order.recipient,
         order.creationTimestamp,
       ],

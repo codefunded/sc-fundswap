@@ -11,10 +11,10 @@ describe('FundSwapOrderManager', () => {
 
     await erc20Token.approve(fundSwap.getAddress(), ethers.parseEther('1'));
     await fundSwap.createPublicOrder({
-      offeredToken: erc20Token.getAddress(),
-      amountOffered: ethers.parseEther('1'),
-      wantedToken: wmaticToken.getAddress(),
-      amountWanted: ethers.parseEther('2'),
+      makerSellToken: erc20Token.getAddress(),
+      makerSellTokenAmount: ethers.parseEther('1'),
+      makerBuyToken: wmaticToken.getAddress(),
+      makerBuyTokenAmount: ethers.parseEther('2'),
       deadline: 1337,
     });
 

@@ -2,15 +2,15 @@ import { loadFixture } from '@nomicfoundation/hardhat-network-helpers';
 import { ethers } from 'hardhat';
 import { prepareTestEnv } from '../utils/testHelpers/fixtures/prepareTestEnv';
 import { expect } from 'chai';
-import { DEFAULT_FEE, MAX_UINT256 } from '../utils/constants';
+import { DEFAULT_FEE } from '../utils/constants';
 
-describe('FeeAggregator', () => {
+describe('FeeAggregatorPlugin', () => {
   it('should allow to get current fee value in basis points', async () => {
-    const { fundSwap } = await loadFixture(prepareTestEnv);
+    const { feeAggregatorPlugin } = await loadFixture(prepareTestEnv);
 
-    const currentFee = await fundSwap.defaultFee();
+    const currentFee = await feeAggregatorPlugin.defaultFee();
     expect(currentFee).to.equal(DEFAULT_FEE);
-    const maxFee = await fundSwap.MAX_FEE();
+    const maxFee = await feeAggregatorPlugin.MAX_FEE();
     expect(maxFee).to.equal(10000);
   });
 
@@ -18,23 +18,31 @@ describe('FeeAggregator', () => {
     const { fundSwap } = await loadFixture(prepareTestEnv);
     const [owner] = await ethers.getSigners();
 
-    const contractOwner = await fundSwap.owner();
-    expect(contractOwner).to.equal(await owner.getAddress());
+    const isOwner = await fundSwap.hasRole(
+      await fundSwap.DEFAULT_ADMIN_ROLE(),
+      await owner.getAddress(),
+    );
+    expect(isOwner).to.equal(true);
   });
 
   it('owner should be allowed to set a new fee value', async () => {
-    const { fundSwap } = await loadFixture(prepareTestEnv);
+    const { fundSwap, feeAggregatorPlugin } = await loadFixture(prepareTestEnv);
     const [user1, user2] = await ethers.getSigners();
-    const fundSwapOwner = await fundSwap.owner();
-    expect(fundSwapOwner).to.equal(await user1.getAddress());
+    const isOwner = await fundSwap.hasRole(
+      await fundSwap.DEFAULT_ADMIN_ROLE(),
+      await user1.getAddress(),
+    );
+    expect(isOwner).to.equal(true);
+    const feeAggregatorPluginOwner = await feeAggregatorPlugin.owner();
+    expect(feeAggregatorPluginOwner).to.equal(await user1.getAddress());
 
-    await fundSwap.setDefaultFee(100);
-    const currentFee = await fundSwap.defaultFee();
+    await feeAggregatorPlugin.setDefaultFee(100);
+    const currentFee = await feeAggregatorPlugin.defaultFee();
     expect(currentFee).to.equal(100);
 
-    await expect(fundSwap.connect(user2).setDefaultFee(100)).to.be.revertedWith(
-      'Ownable: caller is not the owner',
-    );
+    await expect(
+      feeAggregatorPlugin.connect(user2).setDefaultFee(100),
+    ).to.be.revertedWithCustomError(feeAggregatorPlugin, 'OwnableUnauthorizedAccount');
   });
 
   it('should accrue fees when public market order is executed', async () => {
@@ -43,10 +51,10 @@ describe('FeeAggregator', () => {
 
     await erc20Token.approve(fundSwap.getAddress(), ethers.parseEther('1'));
     await fundSwap.createPublicOrder({
-      offeredToken: erc20Token.getAddress(),
-      amountOffered: ethers.parseEther('1'),
-      wantedToken: wmaticToken.getAddress(),
-      amountWanted: ethers.parseEther('2'),
+      makerSellToken: erc20Token.getAddress(),
+      makerSellTokenAmount: ethers.parseEther('1'),
+      makerBuyToken: wmaticToken.getAddress(),
+      makerBuyTokenAmount: ethers.parseEther('2'),
       deadline: 0,
     });
 
@@ -67,10 +75,10 @@ describe('FeeAggregator', () => {
 
     await erc20Token.approve(fundSwap.getAddress(), ethers.parseEther('1'));
     await fundSwap.createPublicOrder({
-      offeredToken: erc20Token.getAddress(),
-      amountOffered: ethers.parseEther('1'),
-      wantedToken: wmaticToken.getAddress(),
-      amountWanted: ethers.parseEther('2'),
+      makerSellToken: erc20Token.getAddress(),
+      makerSellTokenAmount: ethers.parseEther('1'),
+      makerBuyToken: wmaticToken.getAddress(),
+      makerBuyTokenAmount: ethers.parseEther('2'),
       deadline: 0,
     });
 
@@ -86,7 +94,7 @@ describe('FeeAggregator', () => {
       ethers.parseEther('0.0024'),
     );
 
-    await fundSwap.withdrawFees(erc20Token.getAddress(), MAX_UINT256);
+    await fundSwap.withdraw(erc20Token.getAddress(), ethers.parseEther('0.0024'));
 
     expect(await erc20Token.balanceOf(fundSwap.getAddress())).to.equal(
       ethers.parseEther('0'),
@@ -96,18 +104,37 @@ describe('FeeAggregator', () => {
     );
   });
 
-  it('should allow owner to set a fee for a specific token', async () => {
-    const { fundSwap, erc20Token, wmaticToken, usdcToken } = await loadFixture(
-      prepareTestEnv,
+  it('should not allow FundSwap admin to withdraw tokens that were deposited by makers when creating orders', async () => {
+    const { fundSwap, erc20Token, wmaticToken } = await loadFixture(prepareTestEnv);
+
+    await erc20Token.approve(fundSwap.getAddress(), ethers.parseEther('1'));
+    await fundSwap.createPublicOrder({
+      makerSellToken: erc20Token.getAddress(),
+      makerSellTokenAmount: ethers.parseEther('1'),
+      makerBuyToken: wmaticToken.getAddress(),
+      makerBuyTokenAmount: ethers.parseEther('2'),
+      deadline: 0,
+    });
+
+    expect(
+      fundSwap.withdraw(erc20Token.getAddress(), ethers.parseEther('1')),
+    ).to.be.revertedWithCustomError(
+      fundSwap,
+      'FundSwap__WithdrawalViolatesFullBackingRequirement',
     );
+  });
+
+  it('should allow owner to set a fee for a specific token', async () => {
+    const { fundSwap, feeAggregatorPlugin, erc20Token, wmaticToken, usdcToken } =
+      await loadFixture(prepareTestEnv);
     const [, user2] = await ethers.getSigners();
 
     await erc20Token.approve(fundSwap.getAddress(), ethers.parseEther('1'));
     await fundSwap.createPublicOrder({
-      offeredToken: erc20Token.getAddress(),
-      amountOffered: ethers.parseEther('1'),
-      wantedToken: wmaticToken.getAddress(),
-      amountWanted: ethers.parseEther('2'),
+      makerSellToken: erc20Token.getAddress(),
+      makerSellTokenAmount: ethers.parseEther('1'),
+      makerBuyToken: wmaticToken.getAddress(),
+      makerBuyTokenAmount: ethers.parseEther('2'),
       deadline: 0,
     });
 
@@ -115,7 +142,7 @@ describe('FeeAggregator', () => {
       .connect(user2)
       .approve(fundSwap.getAddress(), ethers.parseEther('2'));
 
-    await fundSwap.setFeeForAsset(erc20Token.getAddress(), 100);
+    await feeAggregatorPlugin.setFeeForAsset(erc20Token.getAddress(), 100);
 
     await fundSwap.connect(user2).fillPublicOrder(0, user2.getAddress());
 
@@ -125,10 +152,10 @@ describe('FeeAggregator', () => {
 
     await usdcToken.approve(fundSwap.getAddress(), ethers.parseUnits('1', 6));
     await fundSwap.createPublicOrder({
-      offeredToken: usdcToken.getAddress(),
-      amountOffered: ethers.parseUnits('1', 6),
-      wantedToken: wmaticToken.getAddress(),
-      amountWanted: ethers.parseEther('2'),
+      makerSellToken: usdcToken.getAddress(),
+      makerSellTokenAmount: ethers.parseUnits('1', 6),
+      makerBuyToken: wmaticToken.getAddress(),
+      makerBuyTokenAmount: ethers.parseEther('2'),
       deadline: 0,
     });
 
@@ -145,12 +172,13 @@ describe('FeeAggregator', () => {
   });
 
   it('should allow to get all fees set for all tokens', async () => {
-    const { fundSwap, erc20Token, usdcToken } = await loadFixture(prepareTestEnv);
+    const { feeAggregatorPlugin, erc20Token, usdcToken } =
+      await loadFixture(prepareTestEnv);
 
-    await fundSwap.setFeeForAsset(erc20Token.getAddress(), 100);
-    await fundSwap.setFeeForAsset(usdcToken.getAddress(), 200);
+    await feeAggregatorPlugin.setFeeForAsset(erc20Token.getAddress(), 100);
+    await feeAggregatorPlugin.setFeeForAsset(usdcToken.getAddress(), 200);
 
-    const fees = await fundSwap.getFeesForAllAssets();
+    const fees = await feeAggregatorPlugin.getFeesForAllAssets();
 
     expect(fees.assets[0]).to.equal(await erc20Token.getAddress());
     expect(fees.fees[0]).to.equal(100);
@@ -159,21 +187,22 @@ describe('FeeAggregator', () => {
   });
 
   it('should allow to disable swap fee by setting the fee to 0', async () => {
-    const { fundSwap, erc20Token, wmaticToken } = await loadFixture(prepareTestEnv);
+    const { fundSwap, feeAggregatorPlugin, erc20Token, wmaticToken } =
+      await loadFixture(prepareTestEnv);
     const [, user2] = await ethers.getSigners();
 
-    await fundSwap.setFeeForAsset(erc20Token.getAddress(), 0);
+    await feeAggregatorPlugin.setFeeForAsset(erc20Token.getAddress(), 0);
 
-    const fees = await fundSwap.getFeesForAllAssets();
+    const fees = await feeAggregatorPlugin.getFeesForAllAssets();
     expect(fees.assets[0]).to.equal(await erc20Token.getAddress());
     expect(fees.fees[0]).to.equal(0);
 
     await erc20Token.approve(fundSwap.getAddress(), ethers.parseEther('1'));
     await fundSwap.createPublicOrder({
-      offeredToken: erc20Token.getAddress(),
-      amountOffered: ethers.parseEther('1'),
-      wantedToken: wmaticToken.getAddress(),
-      amountWanted: ethers.parseEther('2'),
+      makerSellToken: erc20Token.getAddress(),
+      makerSellTokenAmount: ethers.parseEther('1'),
+      makerBuyToken: wmaticToken.getAddress(),
+      makerBuyTokenAmount: ethers.parseEther('2'),
       deadline: 0,
     });
 
@@ -187,10 +216,11 @@ describe('FeeAggregator', () => {
   });
 
   it('should allow to set a fee level for a pair', async () => {
-    const { fundSwap, erc20Token, wmaticToken } = await loadFixture(prepareTestEnv);
+    const { feeAggregatorPlugin, erc20Token, wmaticToken } =
+      await loadFixture(prepareTestEnv);
     const [, user2] = await ethers.getSigners();
 
-    await fundSwap.setFeeLevelsForPair(
+    await feeAggregatorPlugin.setFeeLevelsForPair(
       erc20Token.getAddress(),
       wmaticToken.getAddress(),
       [
@@ -202,7 +232,7 @@ describe('FeeAggregator', () => {
     );
 
     await expect(
-      fundSwap
+      feeAggregatorPlugin
         .connect(user2)
         .setFeeLevelsForPair(erc20Token.getAddress(), wmaticToken.getAddress(), [
           {
@@ -210,14 +240,15 @@ describe('FeeAggregator', () => {
             minAmount: ethers.parseEther('2'),
           },
         ]),
-    ).to.be.revertedWith('Ownable: caller is not the owner');
+    ).to.be.revertedWithCustomError(feeAggregatorPlugin, 'OwnableUnauthorizedAccount');
   });
 
   it('should get the correct fee for a given pair and the amount', async () => {
-    const { fundSwap, erc20Token, wmaticToken } = await loadFixture(prepareTestEnv);
+    const { fundSwap, feeAggregatorPlugin, erc20Token, wmaticToken } =
+      await loadFixture(prepareTestEnv);
     const [, user2] = await ethers.getSigners();
 
-    await fundSwap.setFeeLevelsForPair(
+    await feeAggregatorPlugin.setFeeLevelsForPair(
       erc20Token.getAddress(),
       wmaticToken.getAddress(),
       [
@@ -234,10 +265,10 @@ describe('FeeAggregator', () => {
 
     await erc20Token.approve(fundSwap.getAddress(), ethers.parseEther('1'));
     await fundSwap.createPublicOrder({
-      offeredToken: erc20Token.getAddress(),
-      amountOffered: ethers.parseEther('1'),
-      wantedToken: wmaticToken.getAddress(),
-      amountWanted: ethers.parseEther('2'),
+      makerSellToken: erc20Token.getAddress(),
+      makerSellTokenAmount: ethers.parseEther('1'),
+      makerBuyToken: wmaticToken.getAddress(),
+      makerBuyTokenAmount: ethers.parseEther('2'),
       deadline: 0,
     });
 
@@ -249,14 +280,14 @@ describe('FeeAggregator', () => {
     expect(await erc20Token.balanceOf(fundSwap.getAddress())).to.equal(
       ethers.parseEther('0.01'),
     );
-    await fundSwap.withdrawFees(erc20Token.getAddress(), ethers.parseEther('0.01'));
+    await fundSwap.withdraw(erc20Token.getAddress(), ethers.parseEther('0.01'));
 
     await erc20Token.approve(fundSwap.getAddress(), ethers.parseEther('2'));
     await fundSwap.createPublicOrder({
-      offeredToken: erc20Token.getAddress(),
-      amountOffered: ethers.parseEther('2'),
-      wantedToken: wmaticToken.getAddress(),
-      amountWanted: ethers.parseEther('4'),
+      makerSellToken: erc20Token.getAddress(),
+      makerSellTokenAmount: ethers.parseEther('2'),
+      makerBuyToken: wmaticToken.getAddress(),
+      makerBuyTokenAmount: ethers.parseEther('4'),
       deadline: 0,
     });
 
@@ -271,9 +302,10 @@ describe('FeeAggregator', () => {
   });
 
   it('should allow to remove fee levels for a pair', async () => {
-    const { fundSwap, erc20Token, wmaticToken } = await loadFixture(prepareTestEnv);
+    const { feeAggregatorPlugin, erc20Token, wmaticToken } =
+      await loadFixture(prepareTestEnv);
 
-    await fundSwap.setFeeLevelsForPair(
+    await feeAggregatorPlugin.setFeeLevelsForPair(
       erc20Token.getAddress(),
       wmaticToken.getAddress(),
       [
@@ -284,19 +316,20 @@ describe('FeeAggregator', () => {
       ],
     );
 
-    await fundSwap.setFeeLevelsForPair(
+    await feeAggregatorPlugin.setFeeLevelsForPair(
       erc20Token.getAddress(),
       wmaticToken.getAddress(),
       [],
     );
 
-    expect(await fundSwap.getFeeLevelsForAllPairs()).to.be.deep.equal([]);
+    expect(await feeAggregatorPlugin.getFeeLevelsForAllPairs()).to.be.deep.equal([]);
   });
 
   it('should allow to get all fee levels for a pair', async () => {
-    const { fundSwap, erc20Token, wmaticToken } = await loadFixture(prepareTestEnv);
+    const { feeAggregatorPlugin, erc20Token, wmaticToken } =
+      await loadFixture(prepareTestEnv);
 
-    await fundSwap.setFeeLevelsForPair(
+    await feeAggregatorPlugin.setFeeLevelsForPair(
       erc20Token.getAddress(),
       wmaticToken.getAddress(),
       [
@@ -315,7 +348,7 @@ describe('FeeAggregator', () => {
       ],
     );
 
-    const feeLevels = await fundSwap.getFeeLevelsForPair(
+    const feeLevels = await feeAggregatorPlugin.getFeeLevelsForPair(
       erc20Token.getAddress(),
       wmaticToken.getAddress(),
     );
@@ -329,9 +362,10 @@ describe('FeeAggregator', () => {
   });
 
   it('should allow to get all fee levels for all pairs', async () => {
-    const { fundSwap, erc20Token, wmaticToken } = await loadFixture(prepareTestEnv);
+    const { feeAggregatorPlugin, erc20Token, wmaticToken } =
+      await loadFixture(prepareTestEnv);
 
-    await fundSwap.setFeeLevelsForPair(
+    await feeAggregatorPlugin.setFeeLevelsForPair(
       erc20Token.getAddress(),
       wmaticToken.getAddress(),
       [
@@ -350,7 +384,7 @@ describe('FeeAggregator', () => {
       ],
     );
 
-    await fundSwap.setFeeLevelsForPair(
+    await feeAggregatorPlugin.setFeeLevelsForPair(
       '0x0000000000000000000000000000000000000001',
       '0x0000000000000000000000000000000000000002',
       [
@@ -369,8 +403,8 @@ describe('FeeAggregator', () => {
       ],
     );
 
-    const pairFees = await fundSwap.getFeeLevelsForAllPairs();
-    if (await wmaticToken.getAddress() < await erc20Token.getAddress()) {
+    const pairFees = await feeAggregatorPlugin.getFeeLevelsForAllPairs();
+    if ((await wmaticToken.getAddress()) < (await erc20Token.getAddress())) {
       expect(pairFees[0].asset1).to.equal(await wmaticToken.getAddress());
       expect(pairFees[0].asset2).to.equal(await erc20Token.getAddress());
     } else {
@@ -395,11 +429,12 @@ describe('FeeAggregator', () => {
     expect(pairFees[1].feeLevels[2].minAmount).to.equal(ethers.parseEther('3'));
   });
 
-  it('should have the same fee no matter which token is offered in a pair', async () => {
-    const { fundSwap, erc20Token, wmaticToken } = await loadFixture(prepareTestEnv);
+  it('should have the same fee no matter which token is a base token in a pair', async () => {
+    const { fundSwap, feeAggregatorPlugin, erc20Token, wmaticToken } =
+      await loadFixture(prepareTestEnv);
     const [, user2] = await ethers.getSigners();
 
-    await fundSwap.setFeeLevelsForPair(
+    await feeAggregatorPlugin.setFeeLevelsForPair(
       erc20Token.getAddress(),
       wmaticToken.getAddress(),
       [
@@ -412,10 +447,10 @@ describe('FeeAggregator', () => {
 
     await erc20Token.approve(fundSwap.getAddress(), ethers.parseEther('2'));
     await fundSwap.createPublicOrder({
-      offeredToken: erc20Token.getAddress(),
-      amountOffered: ethers.parseEther('2'),
-      wantedToken: wmaticToken.getAddress(),
-      amountWanted: ethers.parseEther('4'),
+      makerSellToken: erc20Token.getAddress(),
+      makerSellTokenAmount: ethers.parseEther('2'),
+      makerBuyToken: wmaticToken.getAddress(),
+      makerBuyTokenAmount: ethers.parseEther('4'),
       deadline: 0,
     });
 
@@ -430,10 +465,10 @@ describe('FeeAggregator', () => {
 
     await wmaticToken.approve(fundSwap.getAddress(), ethers.parseEther('2'));
     await fundSwap.createPublicOrder({
-      offeredToken: wmaticToken.getAddress(),
-      amountOffered: ethers.parseEther('2'),
-      wantedToken: erc20Token.getAddress(),
-      amountWanted: ethers.parseEther('4'),
+      makerSellToken: wmaticToken.getAddress(),
+      makerSellTokenAmount: ethers.parseEther('2'),
+      makerBuyToken: erc20Token.getAddress(),
+      makerBuyTokenAmount: ethers.parseEther('4'),
       deadline: 0,
     });
 

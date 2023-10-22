@@ -9,20 +9,20 @@ describe('Router', () => {
     it('Should sort orders by price from the lowest to highest', () => {
       const orders = [
         {
-          orderId: 0,
-          offeredToken: '1',
-          wantedToken: '2',
-          amountOffered: ethers.parseEther('3'),
-          amountWanted: ethers.parseEther('15'),
-          deadline: 0,
+          id: 0n,
+          makerSellToken: '1',
+          makerBuyToken: '2',
+          makerSellTokenAmount: ethers.parseEther('3'),
+          makerBuyTokenAmount: ethers.parseEther('15'),
+          deadline: 0n,
         },
         {
-          orderId: 1,
-          offeredToken: '1',
-          wantedToken: '2',
-          amountOffered: ethers.parseEther('2'),
-          amountWanted: ethers.parseEther('2'),
-          deadline: 0,
+          id: 1n,
+          makerSellToken: '1',
+          makerBuyToken: '2',
+          makerSellTokenAmount: ethers.parseEther('2'),
+          makerBuyTokenAmount: ethers.parseEther('2'),
+          deadline: 0n,
         },
       ];
       const sortedByPrice = [...orders].sort(sortOrdersByPrice);
@@ -51,41 +51,45 @@ describe('Router', () => {
     const { fundSwap, erc20Token, wmaticToken } = await loadFixture(prepareTestEnv);
 
     await erc20Token.approve(fundSwap.getAddress(), ethers.parseEther('3'));
-    await fundSwap.createPublicOrder({
-      // ID 0
-      offeredToken: erc20Token.getAddress(),
-      amountOffered: ethers.parseEther('1'),
-      wantedToken: wmaticToken.getAddress(),
-      amountWanted: ethers.parseEther('4'),
-      deadline: 0,
-    });
-    await fundSwap.createPublicOrder({
-      // ID 1
-      offeredToken: erc20Token.getAddress(),
-      amountOffered: ethers.parseEther('1'),
-      wantedToken: wmaticToken.getAddress(),
-      amountWanted: ethers.parseEther('5'),
-      deadline: 0,
-    });
-    await fundSwap.createPublicOrder({
-      // ID 2
-      offeredToken: erc20Token.getAddress(),
-      amountOffered: ethers.parseEther('1'),
-      wantedToken: wmaticToken.getAddress(),
-      amountWanted: ethers.parseEther('2'),
-      deadline: 0,
-    });
-
-    const orders = await fundSwap.getOrdersForPair(
+    const [erc20TokenAddress, wmaticTokenAddress] = await Promise.all([
       erc20Token.getAddress(),
       wmaticToken.getAddress(),
-    );
+    ]);
+    const orders = [
+      {
+        id: 0n,
+        makerSellToken: erc20TokenAddress,
+        makerSellTokenAmount: ethers.parseEther('1'),
+        makerBuyToken: wmaticTokenAddress,
+        makerBuyTokenAmount: ethers.parseEther('4'),
+        deadline: 0n,
+      },
+      {
+        id: 1n,
+        makerSellToken: erc20TokenAddress,
+        makerSellTokenAmount: ethers.parseEther('1'),
+        makerBuyToken: wmaticTokenAddress,
+        makerBuyTokenAmount: ethers.parseEther('5'),
+        deadline: 0n,
+      },
+      {
+        id: 2n,
+        makerSellToken: erc20TokenAddress,
+        makerSellTokenAmount: ethers.parseEther('1'),
+        makerBuyToken: wmaticTokenAddress,
+        makerBuyTokenAmount: ethers.parseEther('2'),
+        deadline: 0n,
+      },
+    ];
+    await fundSwap.createPublicOrder(orders[0]);
+    await fundSwap.createPublicOrder(orders[1]);
+    await fundSwap.createPublicOrder(orders[2]);
 
     const pathSingle = createTradeRoute(
       {
         type: 'EXACT_INPUT',
-        destinationToken: await erc20Token.getAddress(),
-        sourceToken: await wmaticToken.getAddress(),
+        destinationToken: erc20TokenAddress,
+        sourceToken: wmaticTokenAddress,
         sourceAmount: ethers.parseEther('2'),
       },
       orders,
@@ -95,8 +99,8 @@ describe('Router', () => {
     const pathTwo = createTradeRoute(
       {
         type: 'EXACT_INPUT',
-        destinationToken: await erc20Token.getAddress(),
-        sourceToken: await wmaticToken.getAddress(),
+        destinationToken: erc20TokenAddress,
+        sourceToken: wmaticTokenAddress,
         sourceAmount: ethers.parseEther('6'),
       },
       orders,
@@ -120,41 +124,45 @@ describe('Router', () => {
     const { fundSwap, erc20Token, wmaticToken } = await loadFixture(prepareTestEnv);
 
     await erc20Token.approve(fundSwap.getAddress(), ethers.parseEther('3'));
-    await fundSwap.createPublicOrder({
-      // ID 0
-      offeredToken: erc20Token.getAddress(),
-      amountOffered: ethers.parseEther('1'),
-      wantedToken: wmaticToken.getAddress(),
-      amountWanted: ethers.parseEther('4'),
-      deadline: 0,
-    });
-    await fundSwap.createPublicOrder({
-      // ID 1
-      offeredToken: erc20Token.getAddress(),
-      amountOffered: ethers.parseEther('1'),
-      wantedToken: wmaticToken.getAddress(),
-      amountWanted: ethers.parseEther('5'),
-      deadline: 0,
-    });
-    await fundSwap.createPublicOrder({
-      // ID 2
-      offeredToken: erc20Token.getAddress(),
-      amountOffered: ethers.parseEther('1'),
-      wantedToken: wmaticToken.getAddress(),
-      amountWanted: ethers.parseEther('2'),
-      deadline: 0,
-    });
-
-    const orders = await fundSwap.getOrdersForPair(
+    const [erc20TokenAddress, wmaticTokenAddress] = await Promise.all([
       erc20Token.getAddress(),
       wmaticToken.getAddress(),
-    );
+    ]);
+    const orders = [
+      {
+        id: 0n,
+        makerSellToken: erc20TokenAddress,
+        makerSellTokenAmount: ethers.parseEther('1'),
+        makerBuyToken: wmaticTokenAddress,
+        makerBuyTokenAmount: ethers.parseEther('4'),
+        deadline: 0n,
+      },
+      {
+        id: 1n,
+        makerSellToken: erc20TokenAddress,
+        makerSellTokenAmount: ethers.parseEther('1'),
+        makerBuyToken: wmaticTokenAddress,
+        makerBuyTokenAmount: ethers.parseEther('5'),
+        deadline: 0n,
+      },
+      {
+        id: 2n,
+        makerSellToken: erc20TokenAddress,
+        makerSellTokenAmount: ethers.parseEther('1'),
+        makerBuyToken: wmaticTokenAddress,
+        makerBuyTokenAmount: ethers.parseEther('2'),
+        deadline: 0n,
+      },
+    ];
+    await fundSwap.createPublicOrder(orders[0]);
+    await fundSwap.createPublicOrder(orders[1]);
+    await fundSwap.createPublicOrder(orders[2]);
 
     const pathSingle = createTradeRoute(
       {
         type: 'EXACT_OUTPUT',
-        destinationToken: await erc20Token.getAddress(),
-        sourceToken: await wmaticToken.getAddress(),
+        destinationToken: erc20TokenAddress,
+        sourceToken: wmaticTokenAddress,
         destinationAmount: ethers.parseEther('1'),
       },
       orders,
@@ -164,8 +172,8 @@ describe('Router', () => {
     const pathTwo = createTradeRoute(
       {
         type: 'EXACT_OUTPUT',
-        destinationToken: await erc20Token.getAddress(),
-        sourceToken: await wmaticToken.getAddress(),
+        destinationToken: erc20TokenAddress,
+        sourceToken: wmaticTokenAddress,
         destinationAmount: ethers.parseEther('2'),
       },
       orders,

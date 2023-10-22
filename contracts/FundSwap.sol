@@ -1,82 +1,119 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.18;
+pragma solidity 0.8.21;
 
+import '@openzeppelin/contracts/access/Ownable.sol';
+import '@openzeppelin/contracts/access/AccessControl.sol';
+import '@openzeppelin/contracts/governance/TimelockController.sol';
 import '@openzeppelin/contracts/token/ERC20/IERC20.sol';
 import '@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol';
-import '@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol';
-import '@openzeppelin/contracts/utils/math/Math.sol';
-import '@openzeppelin/contracts/security/ReentrancyGuard.sol';
-import '@openzeppelin/contracts/utils/structs/EnumerableSet.sol';
+import '@openzeppelin/contracts/utils/ReentrancyGuard.sol';
 import './IFundSwap.sol';
 import './OrderStructs.sol';
+import { IPlugin, PluginCallsConfig } from './plugins/IPlugin.sol';
 import { FundSwapOrderManager } from './FundSwapOrderManager.sol';
-import { FeeAggregator } from './extensions/FeeAggregator.sol';
 import { PairLib } from './libraries/PairLib.sol';
 import { OrderLib } from './libraries/OrderLib.sol';
-import { OrderSignatureVerifier } from './extensions/OrderSignatureVerifier.sol';
-import { TokenWhitelist, TokenWhitelist__TokenNotWhitelisted } from './extensions/TokenWhitelist.sol';
+import { PluginLib, PluginsToRun } from './libraries/PluginLib.sol';
+import { OrderSignatureVerifierLib } from './libraries/OrderSignatureVerifierLib.sol';
+import { TokenTreasuryLib, Treasury } from './libraries/TokenTreasuryLib.sol';
+import { EnumerableSet } from '@openzeppelin/contracts/utils/structs/EnumerableSet.sol';
 
 /**
- * @notice FundSwap is a decentralized spot OTC exchange for ERC-20 tokens compatible with EVM chains.
- * It allows to create public and private orders for any ERC-20 token pair. Public orders are available
- * for anyone to fill, while private orders can have a specific recipient and a deadline. Private orders
- * are not saved onchain but can be passed from the creator to the filler offchain. Public orders
- * are represented as ERC-721 tokens. The exchange also supports routing through a chain of orders.
+ * @notice FundSwap is a non-custodial spot exchange for ERC-20 tokens compatible with EVM chains.
+ * It allows to create orders that are represented as ERC-721 tokens. There is a couple of periphery
+ * contracts that allow to create off-chain private or fill multiple orders in a single batch.
+ * FundSwap is easily extendable, it has a plugin system that allows to hook into the transaction lifecycle
+ * and execute custom logic when orders are created, filled or cancelled. The exchange also supports
+ * routing through a chain of orders.
  */
-contract FundSwap is
-  IFundSwapEvents,
-  IFundSwapErrors,
-  OrderSignatureVerifier,
-  TokenWhitelist,
-  FeeAggregator,
-  ReentrancyGuard
-{
+contract FundSwap is IFundSwapEvents, IFundSwapErrors, AccessControl, ReentrancyGuard {
   using SafeERC20 for IERC20;
-  using EnumerableSet for EnumerableSet.UintSet;
+  using TokenTreasuryLib for Treasury;
+  using EnumerableSet for EnumerableSet.AddressSet;
 
   /// @dev manager for public orders (ERC721)
   FundSwapOrderManager public immutable orderManager;
-  /// @dev token1 => token2 => order IDs
-  mapping(address => mapping(address => EnumerableSet.UintSet)) private orderIdsForPair;
-  /// @dev token => order hash => is executed
-  mapping(address => mapping(bytes32 => bool)) public executedPrivateOrderHashes;
+  /// @dev list of plugins
+  EnumerableSet.AddressSet private plugins;
+  /// @dev computed plugin call configs stored in a more query-friendly way
+  PluginsToRun private pluginCallConfigs;
+  /// @dev treasury state that keeps track of all tokens needed for orders to be fully backed
+  Treasury private tokenTreasury;
 
-  constructor(uint16 _fee) FeeAggregator(_fee) {
+  /// @dev role that allows the entity to withdraw fees
+  bytes32 public constant TREASURY_OWNER = keccak256('TREASURY_OWNER');
+
+  constructor() {
     orderManager = new FundSwapOrderManager();
+    _grantRole(DEFAULT_ADMIN_ROLE, _msgSender());
+    _grantRole(TREASURY_OWNER, _msgSender());
   }
 
-  // ======== VIEW FUNCTIONS ========
+  // ======== PLUGIN FUNCTIONS ========
 
   /**
-   * @notice Returns all public orders for a given token pair.
-   * @param token1 address of the first token
-   * @param token2 address of the second token
-   * @return orders array of public orders
+   * @return list of currently enabled plugins
    */
-  function getOrdersForPair(
-    address token1,
-    address token2
-  ) external view returns (PublicOrderWithId[] memory) {
-    (address tokenA, address tokenB) = PairLib.getPairInOrder(token1, token2);
-    EnumerableSet.UintSet storage orderIds = orderIdsForPair[tokenA][tokenB];
-    if (orderIds.length() == 0) return new PublicOrderWithId[](0);
-
-    PublicOrderWithId[] memory orders = new PublicOrderWithId[](orderIds.length());
-    for (uint256 i = 0; i < orderIds.length(); i++) {
-      PublicOrder memory order = orderManager.getOrder(orderIds.at(i));
-      orders[i] = PublicOrderWithId({
-        orderId: orderIds.at(i),
-        offeredToken: order.offeredToken,
-        wantedToken: order.wantedToken,
-        amountOffered: order.amountOffered,
-        amountWanted: order.amountWanted,
-        deadline: order.deadline
-      });
-    }
-    return orders;
+  function getPlugins() external view returns (address[] memory) {
+    return plugins.values();
   }
 
-  // ======== PUBLIC ORDERS FUNCTIONS ========
+  /**
+   * @notice Allows to enable a plugin
+   * @param plugin a plugin address to be enabled
+   * @param initData additional init data. Bytes format is used so it can be abi decoded on the plugin side.
+   */
+  function enablePlugin(
+    IPlugin plugin,
+    bytes memory initData
+  ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    if (!plugins.add(address(plugin))) return;
+
+    PluginLib.storePluginCallConfig(pluginCallConfigs, plugin);
+    plugin.enable(initData);
+    emit PluginEnabled(address(plugin));
+  }
+
+  /**
+   * @notice Allows to disable a plugin
+   * @param plugin a plugin address to be disabled
+   * @param data additional data for disable function. Bytes format is used so it can be abi decoded
+   * on the plugin side.
+   */
+  function disablePlugin(
+    IPlugin plugin,
+    bytes memory data
+  ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    if (!plugins.remove(address(plugin))) return;
+
+    PluginLib.removePluginCallConfig(pluginCallConfigs, plugin);
+    plugin.disable(data);
+    emit PluginDisabled(address(plugin));
+  }
+
+  // ======== TREASURY FUNCTIONS ========
+
+  /**
+   * Withdraws tokens from the contract. Treasury keeps track of all tokens needed for orders to be fully backed so
+   * owner cannot drain the contract. Owner can only withdraw tokens that contract holds on top of what is needed
+   * for the contract to be fully backed. Usefull for collecting fees and rescuing tokens that were sent to the
+   * contract by mistake.
+   * @param token token to withdraw
+   * @param amount amount to withdraw
+   */
+  function withdraw(address token, uint256 amount) external onlyRole(TREASURY_OWNER) {
+    uint256 tokensNeededForOrdersToBeFullyBacked = tokenTreasury.getBalance(token);
+    uint256 tokensAvailibleToWithdraw = IERC20(token).balanceOf(address(this)) -
+      tokensNeededForOrdersToBeFullyBacked;
+
+    if (amount > tokensAvailibleToWithdraw) {
+      revert FundSwap__WithdrawalViolatesFullBackingRequirement();
+    }
+
+    IERC20(token).safeTransfer(_msgSender(), amount);
+  }
+
+  // ======== PUBLIC ORDER FUNCTIONS ========
 
   /**
    * @notice Creates a public order with a permit signature so that the public order can be created
@@ -95,10 +132,10 @@ contract FundSwap is
     bytes32 r,
     bytes32 s
   ) external returns (uint256 orderId) {
-    IERC20Permit(order.offeredToken).permit(
+    IERC20Permit(order.makerSellToken).permit(
       _msgSender(),
       address(this),
-      order.amountOffered,
+      order.makerSellTokenAmount,
       deadline,
       v,
       r,
@@ -108,49 +145,43 @@ contract FundSwap is
   }
 
   /**
-   * @notice Creates a public order. The offered token must be approved for transfer to the exchange. Only
-   * whitelisted tokens can be used.
+   * @notice Creates a public order. The token that maker sells must be approved for transfer to
+   * the exchange. Only whitelisted tokens can be used.
    * @param order public order data
    * @return orderId ID of the created order
    */
   function createPublicOrder(
-    PublicOrder calldata order
-  )
-    public
-    nonReentrant
-    onlyWhitelistedTokens(order.offeredToken)
-    onlyWhitelistedTokens(order.wantedToken)
-    returns (uint256 orderId)
-  {
-    if (order.amountOffered == 0) revert FundSwap__OfferedAmountIsZero();
-    if (order.amountWanted == 0) revert FundSwap__WantedAmountIsZero();
-    if (order.wantedToken == order.offeredToken) revert FundSwap__InvalidPath();
+    PublicOrder memory order
+  ) public nonReentrant returns (uint256 orderId) {
+    if (order.makerSellTokenAmount == 0) revert FundSwap__MakerSellTokenAmountIsZero();
+    if (order.makerBuyTokenAmount == 0) revert FundSwap__MakerBuyTokenAmountIsZero();
+    if (order.makerBuyToken == order.makerSellToken) revert FundSwap__InvalidPath();
+
+    order = PluginLib.runBeforeOrderCreation(pluginCallConfigs, order);
 
     orderId = orderManager.safeMint(_msgSender(), order);
 
-    (address token1, address token2) = PairLib.getPairInOrder(
-      order.offeredToken,
-      order.wantedToken
+    IERC20(order.makerSellToken).safeTransferFrom(
+      _msgSender(),
+      address(this),
+      order.makerSellTokenAmount
     );
-    orderIdsForPair[token1][token2].add(orderId);
+    tokenTreasury.add(order.makerSellToken, order.makerSellTokenAmount);
+
     emit PublicOrderCreated(
       orderId,
-      order.offeredToken,
-      order.wantedToken,
+      order.makerSellToken,
+      order.makerBuyToken,
       _msgSender(),
       order.deadline
     );
 
-    IERC20(order.offeredToken).safeTransferFrom(
-      _msgSender(),
-      address(this),
-      order.amountOffered
-    );
+    order = PluginLib.runAfterOrderCreation(pluginCallConfigs, order);
   }
 
   /**
-   * @notice Cancels a public order. Only the order owner can cancel it. The offered token is transferred
-   * back to the order owner.
+   * @notice Cancels a public order. Only the order owner can cancel it. The token that maker sells
+   * is transferred back to the order owner.
    * @param orderId ID of the order to fill
    */
   function cancelOrder(uint256 orderId) external {
@@ -158,11 +189,21 @@ contract FundSwap is
     address orderOwner = orderManager.ownerOf(orderId);
     if (orderOwner != _msgSender()) revert FundSwap__NotAnOwner();
 
-    _deleteOrder(orderId, order);
+    order = PluginLib.runBeforeOrderCancel(pluginCallConfigs, order);
 
-    IERC20(order.offeredToken).safeTransfer(_msgSender(), order.amountOffered);
+    IERC20(order.makerSellToken).safeTransfer(_msgSender(), order.makerSellTokenAmount);
+    tokenTreasury.subtract(order.makerSellToken, order.makerSellTokenAmount);
 
-    emit PublicOrderCancelled(orderId, order.offeredToken, order.wantedToken, orderOwner);
+    emit PublicOrderCancelled(
+      orderId,
+      order.makerSellToken,
+      order.makerBuyToken,
+      orderOwner
+    );
+
+    orderManager.burn(orderId);
+
+    order = PluginLib.runAfterOrderCancel(pluginCallConfigs, order);
   }
 
   /**
@@ -185,10 +226,10 @@ contract FundSwap is
     bytes32 s
   ) external returns (SwapResult memory result) {
     PublicOrder memory order = orderManager.getOrder(orderId);
-    IERC20Permit(order.wantedToken).permit(
+    IERC20Permit(order.makerBuyToken).permit(
       _msgSender(),
       address(this),
-      order.amountWanted,
+      order.makerBuyTokenAmount,
       deadline,
       v,
       r,
@@ -198,11 +239,12 @@ contract FundSwap is
   }
 
   /**
-   * @notice Fills a public order. The wanted token of the order must be approved for transfer to the exchange.
-   * Only whitelisted tokens can be used.
+   * @notice Fills a public order. The maker buy token of the order must be approved for transfer
+   * to the exchange. Only whitelisted tokens can be used.
    * @param orderId Order ID to fill
    * @param tokenDestination a recipient of the output token
-   * @return result swap result with data like the amount of output token received and amount of input token spent
+   * @return result swap result with data like the amount of output token received and amount
+   * of input token spent
    */
   function fillPublicOrder(
     uint256 orderId,
@@ -216,14 +258,8 @@ contract FundSwap is
     uint256 orderId,
     PublicOrder memory order,
     address tokenDestination
-  )
-    internal
-    nonReentrant
-    onlyWhitelistedTokens(order.offeredToken)
-    onlyWhitelistedTokens(order.wantedToken)
-    returns (SwapResult memory result)
-  {
-    if (order.wantedToken == address(0) && order.offeredToken == address(0)) {
+  ) internal nonReentrant returns (SwapResult memory result) {
+    if (order.makerBuyToken == address(0) && order.makerSellToken == address(0)) {
       revert FundSwap__OrderDoesNotExist();
     }
     if (order.deadline != 0 && block.timestamp > order.deadline)
@@ -231,55 +267,42 @@ contract FundSwap is
 
     address orderOwner = orderManager.ownerOf(orderId);
 
-    // calculates fee amount and marks it as collected
-    _accrueFeeForToken(
-      order.offeredToken,
-      _calculateFeeAmount(order.offeredToken, order.wantedToken, order.amountOffered)
-    );
+    tokenTreasury.subtract(order.makerSellToken, order.makerSellTokenAmount);
 
-    // Amount out is needed for estimating the amount actually received by the taker
-    uint256 outputAmount = _calculateAmountWithDeductedFee(
-      order.offeredToken,
-      order.wantedToken,
-      order.amountOffered
-    );
+    order = PluginLib.runBeforeOrderFill(pluginCallConfigs, order);
 
     result = SwapResult({
-      outputToken: order.offeredToken,
-      outputAmount: outputAmount,
-      inputToken: order.wantedToken,
-      inputAmount: order.amountWanted
+      outputToken: order.makerSellToken,
+      outputAmount: order.makerSellTokenAmount,
+      inputToken: order.makerBuyToken,
+      inputAmount: order.makerBuyTokenAmount
     });
 
-    _deleteOrder(orderId, order);
-
     // transfer tokens on behalf of the order filler to the order owner
-    IERC20(order.wantedToken).safeTransferFrom(
+    IERC20(order.makerBuyToken).safeTransferFrom(
       _msgSender(),
       orderOwner,
-      order.amountWanted
+      order.makerBuyTokenAmount
     );
 
     // Transfer tokens to the taker on behalf of the order owner that were
     // deposited to this contract when the order was created.
-    IERC20(order.offeredToken).safeTransfer(tokenDestination, outputAmount);
+    IERC20(order.makerSellToken).safeTransfer(
+      tokenDestination,
+      order.makerSellTokenAmount
+    );
+
+    orderManager.burn(orderId);
 
     emit PublicOrderFilled(
       orderId,
-      order.offeredToken,
-      order.wantedToken,
+      order.makerSellToken,
+      order.makerBuyToken,
       orderOwner,
       _msgSender()
     );
-  }
 
-  function _deleteOrder(uint256 orderId, PublicOrder memory order) internal {
-    (address token1, address token2) = PairLib.getPairInOrder(
-      order.offeredToken,
-      order.wantedToken
-    );
-    orderIdsForPair[token1][token2].remove(orderId);
-    orderManager.burn(orderId);
+    order = PluginLib.runAfterOrderFill(pluginCallConfigs, order);
   }
 
   /**
@@ -303,7 +326,7 @@ contract FundSwap is
   ) external returns (SwapResult memory result) {
     PublicOrder memory order = orderManager.getOrder(orderFillRequest.orderId);
     uint256 amountToApprove = orderFillRequest.amountIn;
-    IERC20Permit(order.wantedToken).permit(
+    IERC20Permit(order.makerBuyToken).permit(
       _msgSender(),
       address(this),
       amountToApprove,
@@ -316,10 +339,11 @@ contract FundSwap is
   }
 
   /**
-   * @notice Fills a public order partially. The wanted token of the order must be approved for transfer to the exchange.
-   * Only whitelisted tokens can be used.
+   * @notice Fills a public order partially. The maker buy token of the order must be approved
+   * for transfer to the exchange. Only whitelisted tokens can be used.
    * @param orderFillRequest Order fill request data
-   * @return result swap result with data like the amount of output token received and amount of input token spent
+   * @return result swap result with data like the amount of output token received and amount
+   * of input token spent
    */
   function fillPublicOrderPartially(
     OrderFillRequest memory orderFillRequest,
@@ -333,29 +357,25 @@ contract FundSwap is
     OrderFillRequest memory orderFillRequest,
     PublicOrder memory order,
     address tokenDestination
-  )
-    internal
-    nonReentrant
-    onlyWhitelistedTokens(order.offeredToken)
-    onlyWhitelistedTokens(order.wantedToken)
-    returns (SwapResult memory result)
-  {
+  ) internal nonReentrant returns (SwapResult memory result) {
     if (order.deadline != 0 && block.timestamp > order.deadline) {
       revert FundSwap__OrderExpired();
     }
 
+    uint256 outputAmount = _fillExactInputPublicOrderPartially(
+      orderFillRequest,
+      order,
+      tokenDestination
+    );
+
     result = SwapResult({
-      outputToken: order.offeredToken,
-      outputAmount: _fillExactInputPublicOrderPartially(
-        orderFillRequest,
-        order,
-        tokenDestination
-      ),
-      inputToken: order.wantedToken,
+      outputToken: order.makerSellToken,
+      outputAmount: outputAmount,
+      inputToken: order.makerBuyToken,
       inputAmount: orderFillRequest.amountIn
     });
 
-    (order.amountWanted, order.amountOffered, , ) = OrderLib
+    (order.makerBuyTokenAmount, order.makerSellTokenAmount, , ) = OrderLib
       .calculateOrderAmountsAfterFill(orderFillRequest, order);
     orderManager.updateOrder(orderFillRequest.orderId, order);
 
@@ -373,170 +393,31 @@ contract FundSwap is
       orderFillRequest,
       order
     );
-    _accrueFeeForToken(
-      order.offeredToken,
-      _calculateFeeAmount(order.offeredToken, order.wantedToken, fillAmountOut)
+
+    PublicOrder memory modifiedOrder = PluginLib.runBeforeOrderFill(
+      pluginCallConfigs,
+      // for partial fill we need to prepare a hypotetical order with the acutal amount of tokens that will be filled
+      // in order for plugins to calculate data correctly
+      PublicOrder({
+        makerSellToken: order.makerSellToken,
+        makerBuyToken: order.makerBuyToken,
+        makerSellTokenAmount: fillAmountOut,
+        makerBuyTokenAmount: orderFillRequest.amountIn,
+        deadline: order.deadline
+      })
     );
-    fillAmountOut = _calculateAmountWithDeductedFee(
-      order.offeredToken,
-      order.wantedToken,
-      fillAmountOut
-    );
+    fillAmountOut = modifiedOrder.makerSellTokenAmount;
 
     // pay the order owner
-    IERC20(order.wantedToken).safeTransferFrom(
+    IERC20(modifiedOrder.makerBuyToken).safeTransferFrom(
       _msgSender(),
       orderManager.ownerOf(orderFillRequest.orderId),
       orderFillRequest.amountIn
     );
 
-    IERC20(order.offeredToken).safeTransfer(tokenDestination, fillAmountOut);
-  }
+    IERC20(order.makerSellToken).safeTransfer(tokenDestination, fillAmountOut);
+    tokenTreasury.subtract(order.makerSellToken, fillAmountOut);
 
-  // ======== PRIVATE ORDERS FUNCTIONS ========
-
-  /**
-   * @notice Computes a hash of private order data. This hash can be used by the recipient to finalize the order.
-   * Only whitelisted tokens can be used.
-   * @param order Private order data
-   * @return orderHash Hash of the order
-   */
-  function createPrivateOrder(
-    PrivateOrder memory order
-  )
-    external
-    view
-    onlyWhitelistedTokens(order.offeredToken)
-    onlyWhitelistedTokens(order.wantedToken)
-    returns (bytes32 orderHash)
-  {
-    return super.hashOrder(order);
-  }
-
-  /**
-   * @notice Invalidates a private order. Since private orders are not stored on-chain, there is no way to cancel them.
-   * This function allows the creator to invalidate the order and prevent the recipient from finalizing it. It can be
-   * useful if a user shares the order and a signature with the filler but then changes their mind.
-   * @param order Private order data
-   */
-  function invalidatePrivateOrder(PrivateOrder memory order) external {
-    if (_msgSender() != order.creator) revert FundSwap__NotAnOwner();
-
-    executedPrivateOrderHashes[order.creator][hashOrder(order)] = true;
-
-    emit PrivateOrderInvalidated(
-      order.offeredToken,
-      order.amountOffered,
-      order.wantedToken,
-      order.amountWanted,
-      order.creator,
-      order.recipient,
-      order.deadline,
-      order.creationTimestamp,
-      hashOrder(order)
-    );
-  }
-
-  /**
-   * @notice Fills a private order with permit so the private order can be filled in a single transaction.
-   * Only whitelisted tokens can be used.
-   * @param order private order data
-   * @param orderHash hash of the order
-   * @param sig creator signature of the order
-   * @param deadline deadline for permit
-   * @param v signature parameter
-   * @param r signature parameter
-   * @param s signature parameter
-   */
-  function fillPrivateOrderWithPermit(
-    PrivateOrder calldata order,
-    bytes32 orderHash,
-    bytes memory sig,
-    uint256 deadline,
-    uint8 v,
-    bytes32 r,
-    bytes32 s
-  ) external {
-    IERC20Permit(order.wantedToken).permit(
-      _msgSender(),
-      address(this),
-      order.amountWanted,
-      deadline,
-      v,
-      r,
-      s
-    );
-    fillPrivateOrder(order, orderHash, sig);
-  }
-
-  /**
-   * @notice Fills a private order. Only whitelisted tokens can be used.
-   * @param order private order data
-   * @param orderHash hash of the order
-   * @param sig creator signature of the order
-   */
-  function fillPrivateOrder(
-    PrivateOrder memory order,
-    bytes32 orderHash,
-    bytes memory sig
-  )
-    public
-    nonReentrant
-    onlyWhitelistedTokens(order.offeredToken)
-    onlyWhitelistedTokens(order.wantedToken)
-  {
-    if (!super.verifyOrder(order, orderHash, sig)) {
-      revert FundSwap__InvalidOrderSignature();
-    }
-    if (order.amountOffered == 0) {
-      revert FundSwap__OfferedAmountIsZero();
-    }
-    if (order.amountWanted == 0) {
-      revert FundSwap__WantedAmountIsZero();
-    }
-    if (order.wantedToken == order.offeredToken) {
-      revert FundSwap__InvalidPath();
-    }
-    if (IERC20(order.offeredToken).balanceOf(order.creator) < order.amountOffered) {
-      revert FundSwap__InsufficientCreatorBalance();
-    }
-    if (order.deadline != 0 && block.timestamp > order.deadline) {
-      revert FundSwap__OrderExpired();
-    }
-    if (order.recipient != address(0) && order.recipient != _msgSender()) {
-      revert FundSwap__YouAreNotARecipient();
-    }
-    if (executedPrivateOrderHashes[order.creator][hashOrder(order)]) {
-      revert FundSwap__OrderHaveAlreadyBeenExecuted();
-    }
-
-    executedPrivateOrderHashes[order.creator][hashOrder(order)] = true;
-    emit PrivateOrderFilled(
-      order.offeredToken,
-      order.wantedToken,
-      order.creator,
-      _msgSender()
-    );
-
-    _accrueFeeForToken(
-      order.offeredToken,
-      _calculateFeeAmount(order.offeredToken, order.wantedToken, order.amountOffered)
-    );
-    uint256 amountOfferredWithDeductedFee = _calculateAmountWithDeductedFee(
-      order.offeredToken,
-      order.wantedToken,
-      order.amountOffered
-    );
-
-    IERC20(order.offeredToken).safeTransferFrom(
-      order.creator,
-      _msgSender(),
-      amountOfferredWithDeductedFee
-    );
-    IERC20(order.wantedToken).safeTransferFrom(
-      _msgSender(),
-      order.creator,
-      order.amountWanted
-    );
+    modifiedOrder = PluginLib.runAfterOrderFill(pluginCallConfigs, modifiedOrder);
   }
 }

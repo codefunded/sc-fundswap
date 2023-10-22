@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.18;
+pragma solidity 0.8.21;
 
 import '@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol';
 import '@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol';
+import '@openzeppelin/contracts/utils/Context.sol';
 import { OrderLib } from '../libraries/OrderLib.sol';
 import { FundSwap } from '../FundSwap.sol';
 import '../OrderStructs.sol';
 
 /**
- * @notice An facade contract for FundSwap that allows for batch execution of public orders.
+ * @notice A facade contract for FundSwap that allows for batch execution of public orders.
  */
 contract FundSwapBatchExecutor is Context {
   using SafeERC20 for IERC20;
@@ -21,7 +22,8 @@ contract FundSwapBatchExecutor is Context {
   /**
    * @notice Fills a public order partially with permit.
    * @param orderFillRequests Order fill requests
-   * @param amountToApprove amount to approve for permit of the wanted token of the first order in the batch
+   * @param amountToApprove amount to approve for permit of the maker buy token of the first order
+   * in the batch
    * @param deadline deadline for permit
    * @param v signature parameter
    * @param r signature parameter
@@ -39,7 +41,7 @@ contract FundSwapBatchExecutor is Context {
     PublicOrder memory order = fundswap.orderManager().getOrder(
       orderFillRequests[0].orderId
     );
-    IERC20Permit(order.wantedToken).permit(
+    IERC20Permit(order.makerBuyToken).permit(
       _msgSender(),
       address(this),
       amountToApprove,
@@ -68,8 +70,8 @@ contract FundSwapBatchExecutor is Context {
       PublicOrder memory order = fundswap.orderManager().getOrder(
         orderFillRequests[i].orderId
       );
-      _getTokensNeededForSwap(orderFillRequests[i], order);
-      IERC20(order.wantedToken).approve(address(fundswap), type(uint256).max);
+      _collectTokensNeededForSwap(orderFillRequests[i], order);
+      IERC20(order.makerBuyToken).approve(address(fundswap), type(uint256).max);
 
       results[i] = OrderLib.isFillRequestPartial(orderFillRequests[i], order)
         ? fundswap.fillPublicOrderPartially(orderFillRequests[i], _msgSender())
@@ -99,10 +101,10 @@ contract FundSwapBatchExecutor is Context {
 
       // Only tokens needed for the first swap in sequence have to be transfered to this contract
       if (i == 0) {
-        _getTokensNeededForSwap(orderFillRequests[i], order);
+        _collectTokensNeededForSwap(orderFillRequests[i], order);
       }
 
-      IERC20(order.wantedToken).approve(address(fundswap), type(uint256).max);
+      IERC20(order.makerBuyToken).approve(address(fundswap), type(uint256).max);
 
       results[i] = OrderLib.isFillRequestPartial(orderFillRequests[i], order)
         ? fundswap.fillPublicOrderPartially(orderFillRequests[i], address(this))
@@ -116,7 +118,7 @@ contract FundSwapBatchExecutor is Context {
     );
   }
 
-  function _getTokensNeededForSwap(
+  function _collectTokensNeededForSwap(
     OrderFillRequest memory orderFillRequest,
     PublicOrder memory order
   ) internal {
@@ -124,7 +126,7 @@ contract FundSwapBatchExecutor is Context {
       orderFillRequest,
       order
     );
-    IERC20(order.wantedToken).safeTransferFrom(
+    IERC20(order.makerBuyToken).safeTransferFrom(
       _msgSender(),
       address(this),
       amountRequiredForSwap

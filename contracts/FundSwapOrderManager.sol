@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.18;
+pragma solidity 0.8.21;
 
 import '@openzeppelin/contracts/token/ERC721/ERC721.sol';
 import '@openzeppelin/contracts/token/ERC20/ERC20.sol';
@@ -7,7 +7,6 @@ import '@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol';
 import '@openzeppelin/contracts/token/ERC721/extensions/ERC721Burnable.sol';
 import '@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol';
 import '@openzeppelin/contracts/access/Ownable.sol';
-import '@openzeppelin/contracts/utils/Counters.sol';
 import '@openzeppelin/contracts/utils/Base64.sol';
 import '@openzeppelin/contracts/utils/Strings.sol';
 import { PublicOrder } from './OrderStructs.sol';
@@ -17,14 +16,12 @@ import { PublicOrder } from './OrderStructs.sol';
  * @notice Manages the creation and storage of public orders which are represented as ERC721 tokens.
  */
 contract FundSwapOrderManager is ERC721, ERC721Enumerable, ERC721Burnable, Ownable {
-  using Counters for Counters.Counter;
-
-  Counters.Counter private _tokenIdCounter;
+  uint256 public tokenIdCounter;
 
   /// tokenId => order data
   mapping(uint256 => PublicOrder) public orders;
 
-  constructor() ERC721('FundSwap order', 'FSO') {}
+  constructor() ERC721('FundSwap order', 'FSO') Ownable(_msgSender()) {}
 
   /**
    * gets the order data for a given token id
@@ -43,10 +40,9 @@ contract FundSwapOrderManager is ERC721, ERC721Enumerable, ERC721Burnable, Ownab
     address to,
     PublicOrder calldata order
   ) public onlyOwner returns (uint256) {
-    uint256 tokenId = _tokenIdCounter.current();
-    _tokenIdCounter.increment();
-    _safeMint(to, tokenId);
+    uint256 tokenId = tokenIdCounter++;
     orders[tokenId] = order;
+    _safeMint(to, tokenId);
     return tokenId;
   }
 
@@ -74,7 +70,7 @@ contract FundSwapOrderManager is ERC721, ERC721Enumerable, ERC721Burnable, Ownab
    * @param tokenId the id of the token to get the order data for
    */
   function tokenURI(uint256 tokenId) public view override returns (string memory) {
-    super._requireMinted(tokenId);
+    super._requireOwned(tokenId);
 
     PublicOrder memory order = orders[tokenId];
 
@@ -83,13 +79,13 @@ contract FundSwapOrderManager is ERC721, ERC721Enumerable, ERC721Burnable, Ownab
         string(
           abi.encodePacked(
             '{"name": "',
-            Strings.toString(order.amountOffered),
+            Strings.toString(order.makerSellTokenAmount),
             ' ',
-            ERC20(order.offeredToken).symbol(),
+            ERC20(order.makerSellToken).symbol(),
             ' => ',
-            Strings.toString(order.amountWanted),
+            Strings.toString(order.makerBuyTokenAmount),
             ' ',
-            ERC20(order.wantedToken).symbol(),
+            ERC20(order.makerBuyToken).symbol(),
             '",',
             '"attributes": [',
             '{"trait_type": "Deadline", "value": "',
@@ -106,13 +102,19 @@ contract FundSwapOrderManager is ERC721, ERC721Enumerable, ERC721Burnable, Ownab
 
   // following functions are overrides required by Solidity.
 
-  function _beforeTokenTransfer(
-    address from,
+  function _update(
     address to,
-    uint256 firstTokenId,
-    uint256 batchSize
-  ) internal override(ERC721, ERC721Enumerable) {
-    super._beforeTokenTransfer(from, to, firstTokenId, batchSize);
+    uint256 tokenId,
+    address auth
+  ) internal virtual override(ERC721, ERC721Enumerable) returns (address) {
+    return super._update(to, tokenId, auth);
+  }
+
+  function _increaseBalance(
+    address account,
+    uint128 value
+  ) internal virtual override(ERC721, ERC721Enumerable) {
+    super._increaseBalance(account, value);
   }
 
   function supportsInterface(

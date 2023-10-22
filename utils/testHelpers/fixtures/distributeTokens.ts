@@ -1,5 +1,4 @@
 import { ethers } from 'hardhat';
-import { MockERC20 } from '../../../typechain-types';
 
 const ONE_THOUSAND = ethers.parseUnits('1000', 'ether');
 

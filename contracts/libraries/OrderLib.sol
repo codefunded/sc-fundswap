@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.18;
+pragma solidity 0.8.21;
 
 import '@openzeppelin/contracts/utils/math/Math.sol';
 import '../OrderStructs.sol';
@@ -21,16 +21,17 @@ library OrderLib {
     OrderFillRequest memory request,
     PublicOrder memory order
   ) internal pure returns (bool isPartial) {
-    return request.amountIn < order.amountWanted;
+    return request.amountIn < order.makerBuyTokenAmount;
   }
 
   /**
-   * @notice Calculates the amount of tokens offered and wanted after a partial fill of a given order
+   * @notice Calculates the amount of tokens after a partial fill of a given order
    * @param request order fill request
    * @param order underlying order
-   * @return orderAmountWanted the amount of tokens wanted after the fill
-   * @return orderAmountOffered the amount of tokens offered after the fill
-   * @return inputAmount the amount of tokens needed for the fill
+   * @return orderMakerBuyTokenAmount the amount of tokens that maker can still get after the fill
+   * for the remaining sell tokens on the order
+   * @return orderMakerSellTokenAmount the amount of tokens that maker still wants to sell after the fill
+   * @return inputAmount the amount of tokens needed to fill the order
    * @return outputAmount the amount of tokens received from the fill
    */
   function calculateOrderAmountsAfterFill(
@@ -40,22 +41,27 @@ library OrderLib {
     internal
     pure
     returns (
-      uint256 orderAmountWanted,
-      uint256 orderAmountOffered,
+      uint256 orderMakerBuyTokenAmount,
+      uint256 orderMakerSellTokenAmount,
       uint256 inputAmount,
       uint256 outputAmount
     )
   {
-    uint256 amountWantedBeforeSwap = order.amountWanted;
-    orderAmountWanted = order.amountWanted - request.amountIn;
-    uint256 amountOfferedBeforeSwap = order.amountOffered;
-    orderAmountOffered = order.amountOffered.mulDiv(
-      orderAmountWanted,
-      amountWantedBeforeSwap
+    uint256 makerBuyTokenAmountBeforeSwap = order.makerBuyTokenAmount;
+    orderMakerBuyTokenAmount = order.makerBuyTokenAmount - request.amountIn;
+    uint256 makerSellTokenAmountBeforeSwap = order.makerSellTokenAmount;
+    orderMakerSellTokenAmount = order.makerSellTokenAmount.mulDiv(
+      orderMakerBuyTokenAmount,
+      makerBuyTokenAmountBeforeSwap
     );
     inputAmount = request.amountIn;
-    outputAmount = amountOfferedBeforeSwap - orderAmountOffered;
+    outputAmount = makerSellTokenAmountBeforeSwap - orderMakerSellTokenAmount;
 
-    return (orderAmountWanted, orderAmountOffered, inputAmount, outputAmount);
+    return (
+      orderMakerBuyTokenAmount,
+      orderMakerSellTokenAmount,
+      inputAmount,
+      outputAmount
+    );
   }
 }

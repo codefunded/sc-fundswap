@@ -15,11 +15,10 @@ const deployFundSwap: DeployFunction = async function ({
 
   const fundswapDeployment = await deploy('FundSwap', {
     from: deployer,
-    args: [0],
+    args: [],
     waitConfirmations: networkConfig.confirmations,
     log: true,
   });
-
   if (networkConfig.shouldVerifyContracts) {
     await verifyContract(fundswapDeployment.address, fundswapDeployment.args!);
   }

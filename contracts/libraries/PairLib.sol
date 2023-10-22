@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.18;
+pragma solidity 0.8.21;
 
 /**
  * @notice Utility library for pairs.
@@ -18,7 +18,7 @@ library PairLib {
   }
 
   /**
-   * @notice Calculates max amount of pairs for given amount of assets.
+   * @notice Calculates max amount of uniqe pairs for given amount of assets.
    * @param amountOfAssets Amount of assets to calculate max amount of pairs
    */
   function getMaxAmountOfPairs(uint256 amountOfAssets) internal pure returns (uint256) {
