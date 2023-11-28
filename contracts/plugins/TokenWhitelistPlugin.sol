@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.21;
+pragma solidity 0.8.23;
 
-import { IPlugin, PluginCallsConfig } from './IPlugin.sol';
+import { PluginBase, PluginCallsConfig } from './PluginBase.sol';
+import { Ownable2Step, Ownable } from '@openzeppelin/contracts/access/Ownable2Step.sol';
+import { EnumerableSet } from '@openzeppelin/contracts/utils/structs/EnumerableSet.sol';
 import { PublicOrder } from '../OrderStructs.sol';
-import '@openzeppelin/contracts/access/Ownable.sol';
-import '@openzeppelin/contracts/utils/structs/EnumerableSet.sol';
 
 /**
  * @notice Allows to add and remove tokens from a whitelist. It reverts when a user wants to create or fill
  * an order that contains a token that is not whitelisted. Order cancellation can always happen so user can still
  * cancel an order even if one of the order's tokens has been removed from the whitelist in the meantime.
  */
-contract TokenWhitelistPlugin is IPlugin, Ownable {
+contract TokenWhitelistPlugin is PluginBase, Ownable2Step {
   error TokenWhitelistPlugin__TokenNotWhitelisted(address token);
 
   using EnumerableSet for EnumerableSet.AddressSet;

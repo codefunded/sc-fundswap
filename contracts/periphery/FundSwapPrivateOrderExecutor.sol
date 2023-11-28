@@ -1,17 +1,16 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.21;
+pragma solidity 0.8.23;
 
-import '@openzeppelin/contracts/access/Ownable.sol';
-import '@openzeppelin/contracts/token/ERC20/IERC20.sol';
-import '@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol';
-import '@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol';
-import '@openzeppelin/contracts/token/ERC721/utils/ERC721Holder.sol';
-import '@openzeppelin/contracts/utils/math/Math.sol';
-import '@openzeppelin/contracts/utils/ReentrancyGuard.sol';
-import '@openzeppelin/contracts/utils/structs/EnumerableSet.sol';
-import '../OrderStructs.sol';
-import '../IFundSwap.sol';
-import '../FundSwap.sol';
+import { IERC20 } from '@openzeppelin/contracts/token/ERC20/IERC20.sol';
+import { SafeERC20 } from '@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol';
+import { IERC20Permit } from '@openzeppelin/contracts/token/ERC20/extensions/IERC20Permit.sol';
+import { ERC721Holder } from '@openzeppelin/contracts/token/ERC721/utils/ERC721Holder.sol';
+import { ReentrancyGuard } from '@openzeppelin/contracts/utils/ReentrancyGuard.sol';
+import { Context } from '@openzeppelin/contracts/utils/Context.sol';
+import { EnumerableSet } from '@openzeppelin/contracts/utils/structs/EnumerableSet.sol';
+import { PrivateOrder, PublicOrder, SwapResult } from '../OrderStructs.sol';
+import { IFundSwapEvents, IFundSwapErrors } from '../IFundSwap.sol';
+import { FundSwap } from '../FundSwap.sol';
 import { OrderSignatureVerifierLib } from '../libraries/OrderSignatureVerifierLib.sol';
 
 /**
@@ -31,8 +30,8 @@ contract FundSwapPrivateOrderExecutor is
 
   FundSwap public fundswap;
 
-  /// @dev token => order hash => is executed
-  mapping(address => mapping(bytes32 => bool)) public executedPrivateOrderHashes;
+  /// @dev order hash => is executed
+  mapping(bytes32 => bool) public executedPrivateOrderHashes;
 
   constructor(FundSwap _fundswap) {
     fundswap = _fundswap;
@@ -47,7 +46,7 @@ contract FundSwapPrivateOrderExecutor is
   function createPrivateOrder(
     PrivateOrder memory order
   ) external view returns (bytes32 orderHash) {
-    return OrderSignatureVerifierLib.hashOrder(order);
+    return OrderSignatureVerifierLib.hashPrivateOrder(order);
   }
 
   /**
@@ -61,7 +60,7 @@ contract FundSwapPrivateOrderExecutor is
     bytes32 orderHash,
     bytes memory signature
   ) external view returns (bool) {
-    return OrderSignatureVerifierLib.verifyOrder(order, orderHash, signature);
+    return OrderSignatureVerifierLib.verifyPrivateOrder(order, orderHash, signature);
   }
 
   /**
@@ -72,9 +71,9 @@ contract FundSwapPrivateOrderExecutor is
    */
   function invalidatePrivateOrder(PrivateOrder memory order) external {
     if (_msgSender() != order.maker) revert FundSwap__NotAnOwner();
-    bytes32 orderHash = OrderSignatureVerifierLib.hashOrder(order);
+    bytes32 orderHash = OrderSignatureVerifierLib.hashPrivateOrder(order);
 
-    executedPrivateOrderHashes[order.maker][orderHash] = true;
+    executedPrivateOrderHashes[orderHash] = true;
 
     emit PrivateOrderInvalidated(
       order.makerSellToken,
@@ -134,7 +133,8 @@ contract FundSwapPrivateOrderExecutor is
     bytes32 orderHash,
     bytes memory sig
   ) public nonReentrant returns (SwapResult memory result) {
-    if (!OrderSignatureVerifierLib.verifyOrder(privateOrder, orderHash, sig)) {
+    // check if the order is valid
+    if (!OrderSignatureVerifierLib.verifyPrivateOrder(privateOrder, orderHash, sig)) {
       revert FundSwap__InvalidOrderSignature();
     }
     if (privateOrder.makerSellTokenAmount == 0) {
@@ -146,29 +146,36 @@ contract FundSwapPrivateOrderExecutor is
     if (privateOrder.makerBuyToken == privateOrder.makerSellToken) {
       revert FundSwap__InvalidPath();
     }
+    if (privateOrder.deadline != 0) {
+      if (block.timestamp > privateOrder.deadline) {
+        revert FundSwap__OrderExpired();
+      }
+    }
+    if (privateOrder.recipient != address(0)) {
+      if (privateOrder.recipient != _msgSender()) {
+        revert FundSwap__YouAreNotARecipient();
+      }
+    }
+    if (executedPrivateOrderHashes[orderHash]) {
+      revert FundSwap__OrderHaveAlreadyBeenExecuted();
+    }
+
+    // check if maker and taker have enough balance
     if (
       IERC20(privateOrder.makerSellToken).balanceOf(privateOrder.maker) <
       privateOrder.makerSellTokenAmount
     ) {
       revert FundSwap__InsufficientMakerBalance();
     }
-    if (privateOrder.deadline != 0 && block.timestamp > privateOrder.deadline) {
-      revert FundSwap__OrderExpired();
-    }
-    if (privateOrder.recipient != address(0) && privateOrder.recipient != _msgSender()) {
-      revert FundSwap__YouAreNotARecipient();
-    }
     if (
-      executedPrivateOrderHashes[privateOrder.maker][
-        OrderSignatureVerifierLib.hashOrder(privateOrder)
-      ]
+      IERC20(privateOrder.makerBuyToken).balanceOf(_msgSender()) <
+      privateOrder.makerBuyTokenAmount
     ) {
-      revert FundSwap__OrderHaveAlreadyBeenExecuted();
+      revert FundSwap__InsufficientTakerBalance();
     }
 
-    executedPrivateOrderHashes[privateOrder.maker][
-      OrderSignatureVerifierLib.hashOrder(privateOrder)
-    ] = true;
+    // mark the order as executed
+    executedPrivateOrderHashes[orderHash] = true;
 
     // create public order on the fly from private order, this is needed so all the plugins are executed
     PublicOrder memory order = PublicOrder({
@@ -176,7 +183,8 @@ contract FundSwapPrivateOrderExecutor is
       makerBuyToken: privateOrder.makerBuyToken,
       makerSellTokenAmount: privateOrder.makerSellTokenAmount,
       makerBuyTokenAmount: privateOrder.makerBuyTokenAmount,
-      deadline: privateOrder.deadline
+      deadline: privateOrder.deadline,
+      creationTimestamp: privateOrder.creationTimestamp
     });
 
     // collect tokens needed for creating the order
@@ -202,8 +210,9 @@ contract FundSwapPrivateOrderExecutor is
     );
 
     // make order on behalf of the maker
-    uint256 orderId = fundswap.createPublicOrder(order);
+    bytes32 orderId = fundswap.createPublicOrder(order);
 
+    // fill the order and send tokens to the taker
     result = fundswap.fillPublicOrder(orderId, _msgSender());
 
     // send tokens received from an order fill to the initial maker

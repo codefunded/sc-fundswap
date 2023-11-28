@@ -5,16 +5,24 @@ export const verifyContract = async (
   constructorArguments: any[],
 ) => {
   console.log('Verifying contract...');
-  try {
-    await run('verify:verify', {
-      address: contractAddress,
-      constructorArguments,
-    });
-  } catch (error) {
-    if ((error as Error).message.includes('already verified')) {
-      console.log('Contract already verified!');
-    } else {
-      console.log(error);
+  let tries = 1;
+  while (tries++ <= 5) {
+    try {
+      await run('verify:verify', {
+        address: contractAddress,
+        constructorArguments,
+      });
+      break;
+    } catch (error) {
+      if ((error as Error).message.includes('already verified')) {
+        console.log('Contract already verified!');
+        break;
+      } else {
+        console.log(error);
+      }
     }
+  }
+  if (tries === 5) {
+    console.log('Contract verification failed');
   }
 };

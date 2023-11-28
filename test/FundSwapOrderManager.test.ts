@@ -5,19 +5,23 @@ import { prepareTestEnv } from '../utils/testHelpers/fixtures/prepareTestEnv';
 
 describe('FundSwapOrderManager', () => {
   it('should return tokenURI', async () => {
-    const { fundSwap, fundSwapOrderManager, erc20Token, wmaticToken } = await loadFixture(
-      prepareTestEnv,
-    );
+    const { fundSwap, fundSwapOrderManager, erc20Token, wmaticToken } =
+      await loadFixture(prepareTestEnv);
 
     await erc20Token.approve(fundSwap.getAddress(), ethers.parseEther('1'));
-    await fundSwap.createPublicOrder({
+    const order = {
       makerSellToken: erc20Token.getAddress(),
       makerSellTokenAmount: ethers.parseEther('1'),
       makerBuyToken: wmaticToken.getAddress(),
       makerBuyTokenAmount: ethers.parseEther('2'),
       deadline: 1337,
-    });
+      creationTimestamp: 0,
+    };
+    const orderHash = await fundSwap.getPublicOrderHash(order);
+    await fundSwap.createPublicOrder(order);
 
+    const tokenId = await fundSwapOrderManager.orderHashTotokenId(orderHash);
+    expect(tokenId).to.equal(0);
     const tokenURI = await fundSwapOrderManager.tokenURI(0);
     // remove base64 encoding
     const decodedTokenURI = Buffer.from(tokenURI.split(',')[1], 'base64').toString(

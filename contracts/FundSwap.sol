@@ -1,18 +1,17 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.21;
+pragma solidity 0.8.23;
 
-import '@openzeppelin/contracts/access/Ownable.sol';
-import '@openzeppelin/contracts/access/AccessControl.sol';
-import '@openzeppelin/contracts/governance/TimelockController.sol';
-import '@openzeppelin/contracts/token/ERC20/IERC20.sol';
-import '@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol';
-import '@openzeppelin/contracts/utils/ReentrancyGuard.sol';
-import './IFundSwap.sol';
-import './OrderStructs.sol';
-import { IPlugin, PluginCallsConfig } from './plugins/IPlugin.sol';
+import { TimelockController } from '@openzeppelin/contracts/governance/TimelockController.sol';
+import { AccessControl } from '@openzeppelin/contracts/access/AccessControl.sol';
+import { IERC20 } from '@openzeppelin/contracts/token/ERC20/IERC20.sol';
+import { IERC20Permit } from '@openzeppelin/contracts/token/ERC20/extensions/IERC20Permit.sol';
+import { SafeERC20 } from '@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol';
+import { ReentrancyGuard } from '@openzeppelin/contracts/utils/ReentrancyGuard.sol';
+import { IFundSwapEvents, IFundSwapErrors } from './IFundSwap.sol';
+import { PublicOrder, SwapResult, OrderFillRequest } from './OrderStructs.sol';
 import { FundSwapOrderManager } from './FundSwapOrderManager.sol';
-import { PairLib } from './libraries/PairLib.sol';
 import { OrderLib } from './libraries/OrderLib.sol';
+import { PluginBase } from './plugins/PluginBase.sol';
 import { PluginLib, PluginsToRun } from './libraries/PluginLib.sol';
 import { OrderSignatureVerifierLib } from './libraries/OrderSignatureVerifierLib.sol';
 import { TokenTreasuryLib, Treasury } from './libraries/TokenTreasuryLib.sol';
@@ -64,7 +63,7 @@ contract FundSwap is IFundSwapEvents, IFundSwapErrors, AccessControl, Reentrancy
    * @param initData additional init data. Bytes format is used so it can be abi decoded on the plugin side.
    */
   function enablePlugin(
-    IPlugin plugin,
+    PluginBase plugin,
     bytes memory initData
   ) external onlyRole(DEFAULT_ADMIN_ROLE) {
     if (!plugins.add(address(plugin))) return;
@@ -81,7 +80,7 @@ contract FundSwap is IFundSwapEvents, IFundSwapErrors, AccessControl, Reentrancy
    * on the plugin side.
    */
   function disablePlugin(
-    IPlugin plugin,
+    PluginBase plugin,
     bytes memory data
   ) external onlyRole(DEFAULT_ADMIN_ROLE) {
     if (!plugins.remove(address(plugin))) return;
@@ -101,7 +100,10 @@ contract FundSwap is IFundSwapEvents, IFundSwapErrors, AccessControl, Reentrancy
    * @param token token to withdraw
    * @param amount amount to withdraw
    */
-  function withdraw(address token, uint256 amount) external onlyRole(TREASURY_OWNER) {
+  function withdraw(
+    address token,
+    uint256 amount
+  ) external nonReentrant onlyRole(TREASURY_OWNER) {
     uint256 tokensNeededForOrdersToBeFullyBacked = tokenTreasury.getBalance(token);
     uint256 tokensAvailibleToWithdraw = IERC20(token).balanceOf(address(this)) -
       tokensNeededForOrdersToBeFullyBacked;
@@ -113,7 +115,25 @@ contract FundSwap is IFundSwapEvents, IFundSwapErrors, AccessControl, Reentrancy
     IERC20(token).safeTransfer(_msgSender(), amount);
   }
 
+  /**
+   * @notice Allows to check what amount of a given token is needed for all orders to be fully backed.
+   * @param token token to check
+   * @return amount of tokens needed for all orders to be fully backed
+   */
+  function getRequiredTreasuryBalance(address token) external view returns (uint256) {
+    return tokenTreasury.getBalance(token);
+  }
+
   // ======== PUBLIC ORDER FUNCTIONS ========
+
+  /**
+   * @notice Gets the public order ID by hashing the order data.
+   * @param order public order data
+   * @return hash of the order
+   */
+  function getPublicOrderHash(PublicOrder memory order) public view returns (bytes32) {
+    return OrderSignatureVerifierLib.hashPublicOrder(order);
+  }
 
   /**
    * @notice Creates a public order with a permit signature so that the public order can be created
@@ -131,7 +151,7 @@ contract FundSwap is IFundSwapEvents, IFundSwapErrors, AccessControl, Reentrancy
     uint8 v,
     bytes32 r,
     bytes32 s
-  ) external returns (uint256 orderId) {
+  ) external returns (bytes32 orderId) {
     IERC20Permit(order.makerSellToken).permit(
       _msgSender(),
       address(this),
@@ -148,32 +168,49 @@ contract FundSwap is IFundSwapEvents, IFundSwapErrors, AccessControl, Reentrancy
    * @notice Creates a public order. The token that maker sells must be approved for transfer to
    * the exchange. Only whitelisted tokens can be used.
    * @param order public order data
-   * @return orderId ID of the created order
+   * @return orderHash ID of the created order
    */
   function createPublicOrder(
     PublicOrder memory order
-  ) public nonReentrant returns (uint256 orderId) {
+  ) public nonReentrant returns (bytes32 orderHash) {
     if (order.makerSellTokenAmount == 0) revert FundSwap__MakerSellTokenAmountIsZero();
     if (order.makerBuyTokenAmount == 0) revert FundSwap__MakerBuyTokenAmountIsZero();
     if (order.makerBuyToken == order.makerSellToken) revert FundSwap__InvalidPath();
 
     order = PluginLib.runBeforeOrderCreation(pluginCallConfigs, order);
 
-    orderId = orderManager.safeMint(_msgSender(), order);
+    orderHash = getPublicOrderHash(order);
+
+    orderManager.safeMint(_msgSender(), order);
+
+    uint256 initialFundswapBalanceOfMakerSellToken = IERC20(order.makerSellToken)
+      .balanceOf(address(this));
 
     IERC20(order.makerSellToken).safeTransferFrom(
       _msgSender(),
       address(this),
       order.makerSellTokenAmount
     );
+
+    if (
+      initialFundswapBalanceOfMakerSellToken + order.makerSellTokenAmount !=
+      IERC20(order.makerSellToken).balanceOf(address(this))
+    ) {
+      revert FundSwap__TransferFeeTokensNotSupported(order.makerSellToken);
+    }
+
     tokenTreasury.add(order.makerSellToken, order.makerSellTokenAmount);
 
     emit PublicOrderCreated(
-      orderId,
+      orderHash,
+      orderManager.orderHashTotokenId(orderHash),
       order.makerSellToken,
       order.makerBuyToken,
+      order.makerSellTokenAmount,
+      order.makerBuyTokenAmount,
       _msgSender(),
-      order.deadline
+      order.deadline,
+      order.creationTimestamp
     );
 
     order = PluginLib.runAfterOrderCreation(pluginCallConfigs, order);
@@ -182,11 +219,11 @@ contract FundSwap is IFundSwapEvents, IFundSwapErrors, AccessControl, Reentrancy
   /**
    * @notice Cancels a public order. Only the order owner can cancel it. The token that maker sells
    * is transferred back to the order owner.
-   * @param orderId ID of the order to fill
+   * @param orderHash Hash of the order to fill
    */
-  function cancelOrder(uint256 orderId) external {
-    PublicOrder memory order = orderManager.getOrder(orderId);
-    address orderOwner = orderManager.ownerOf(orderId);
+  function cancelOrder(bytes32 orderHash) external nonReentrant {
+    PublicOrder memory order = orderManager.getOrder(orderHash);
+    address orderOwner = orderManager.ownerOfByHash(orderHash);
     if (orderOwner != _msgSender()) revert FundSwap__NotAnOwner();
 
     order = PluginLib.runBeforeOrderCancel(pluginCallConfigs, order);
@@ -195,13 +232,14 @@ contract FundSwap is IFundSwapEvents, IFundSwapErrors, AccessControl, Reentrancy
     tokenTreasury.subtract(order.makerSellToken, order.makerSellTokenAmount);
 
     emit PublicOrderCancelled(
-      orderId,
+      orderHash,
+      orderManager.orderHashTotokenId(orderHash),
       order.makerSellToken,
       order.makerBuyToken,
       orderOwner
     );
 
-    orderManager.burn(orderId);
+    orderManager.burn(orderHash);
 
     order = PluginLib.runAfterOrderCancel(pluginCallConfigs, order);
   }
@@ -209,7 +247,7 @@ contract FundSwap is IFundSwapEvents, IFundSwapErrors, AccessControl, Reentrancy
   /**
    * @notice Fills a public order with permit signature so that the public order can be filled in a
    * single transaction. Only whitelisted tokens can be used.
-   * @param orderId Order ID to fill
+   * @param orderHash Hash of an order to fill
    * @param tokenDestination a recipient of the output token
    * @param deadline deadline for the permit signature
    * @param v signature parameter
@@ -218,14 +256,14 @@ contract FundSwap is IFundSwapEvents, IFundSwapErrors, AccessControl, Reentrancy
    * @return result swap result with data like the amount of output token received and amount of input token spent
    */
   function fillPublicOrderWithPermit(
-    uint256 orderId,
+    bytes32 orderHash,
     address tokenDestination,
     uint256 deadline,
     uint8 v,
     bytes32 r,
     bytes32 s
   ) external returns (SwapResult memory result) {
-    PublicOrder memory order = orderManager.getOrder(orderId);
+    PublicOrder memory order = orderManager.getOrder(orderHash);
     IERC20Permit(order.makerBuyToken).permit(
       _msgSender(),
       address(this),
@@ -235,37 +273,42 @@ contract FundSwap is IFundSwapEvents, IFundSwapErrors, AccessControl, Reentrancy
       r,
       s
     );
-    return _fillPublicOrder(orderId, order, tokenDestination);
+    return _fillPublicOrder(orderHash, order, tokenDestination);
   }
 
   /**
    * @notice Fills a public order. The maker buy token of the order must be approved for transfer
    * to the exchange. Only whitelisted tokens can be used.
-   * @param orderId Order ID to fill
+   * @param orderHash hash of an order to fill
    * @param tokenDestination a recipient of the output token
    * @return result swap result with data like the amount of output token received and amount
    * of input token spent
    */
   function fillPublicOrder(
-    uint256 orderId,
+    bytes32 orderHash,
     address tokenDestination
   ) public returns (SwapResult memory result) {
-    PublicOrder memory order = orderManager.getOrder(orderId);
-    return _fillPublicOrder(orderId, order, tokenDestination);
+    PublicOrder memory order = orderManager.getOrder(orderHash);
+    return _fillPublicOrder(orderHash, order, tokenDestination);
   }
 
   function _fillPublicOrder(
-    uint256 orderId,
+    bytes32 orderHash,
     PublicOrder memory order,
     address tokenDestination
   ) internal nonReentrant returns (SwapResult memory result) {
-    if (order.makerBuyToken == address(0) && order.makerSellToken == address(0)) {
-      revert FundSwap__OrderDoesNotExist();
+    if (order.makerBuyToken == address(0)) {
+      if (order.makerSellToken == address(0)) {
+        revert FundSwap__OrderDoesNotExist();
+      }
     }
-    if (order.deadline != 0 && block.timestamp > order.deadline)
-      revert FundSwap__OrderExpired();
+    if (order.deadline != 0) {
+      if (block.timestamp > order.deadline) {
+        revert FundSwap__OrderExpired();
+      }
+    }
 
-    address orderOwner = orderManager.ownerOf(orderId);
+    address orderOwner = orderManager.ownerOfByHash(orderHash);
 
     tokenTreasury.subtract(order.makerSellToken, order.makerSellTokenAmount);
 
@@ -292,10 +335,11 @@ contract FundSwap is IFundSwapEvents, IFundSwapErrors, AccessControl, Reentrancy
       order.makerSellTokenAmount
     );
 
-    orderManager.burn(orderId);
+    orderManager.burn(orderHash);
 
     emit PublicOrderFilled(
-      orderId,
+      orderHash,
+      orderManager.orderHashTotokenId(orderHash),
       order.makerSellToken,
       order.makerBuyToken,
       orderOwner,
@@ -324,7 +368,7 @@ contract FundSwap is IFundSwapEvents, IFundSwapErrors, AccessControl, Reentrancy
     bytes32 r,
     bytes32 s
   ) external returns (SwapResult memory result) {
-    PublicOrder memory order = orderManager.getOrder(orderFillRequest.orderId);
+    PublicOrder memory order = orderManager.getOrder(orderFillRequest.orderHash);
     uint256 amountToApprove = orderFillRequest.amountIn;
     IERC20Permit(order.makerBuyToken).permit(
       _msgSender(),
@@ -349,7 +393,7 @@ contract FundSwap is IFundSwapEvents, IFundSwapErrors, AccessControl, Reentrancy
     OrderFillRequest memory orderFillRequest,
     address tokenDestination
   ) external returns (SwapResult memory result) {
-    PublicOrder memory order = orderManager.getOrder(orderFillRequest.orderId);
+    PublicOrder memory order = orderManager.getOrder(orderFillRequest.orderHash);
     return _fillPublicOrderPartially(orderFillRequest, order, tokenDestination);
   }
 
@@ -358,15 +402,22 @@ contract FundSwap is IFundSwapEvents, IFundSwapErrors, AccessControl, Reentrancy
     PublicOrder memory order,
     address tokenDestination
   ) internal nonReentrant returns (SwapResult memory result) {
-    if (order.deadline != 0 && block.timestamp > order.deadline) {
-      revert FundSwap__OrderExpired();
+    if (order.deadline != 0) {
+      if (block.timestamp > order.deadline) {
+        revert FundSwap__OrderExpired();
+      }
+    }
+    if (orderFillRequest.amountIn >= order.makerBuyTokenAmount) {
+      revert FundSwap__AmountInExceededLimit();
     }
 
-    uint256 outputAmount = _fillExactInputPublicOrderPartially(
-      orderFillRequest,
-      order,
-      tokenDestination
-    );
+    (
+      uint256 newMakerBuyTokenAmount,
+      uint256 newMakerSellTokenAmount,
+      uint256 outputAmount
+    ) = _fillExactInputPublicOrderPartially(orderFillRequest, order, tokenDestination);
+    order.makerBuyTokenAmount = newMakerBuyTokenAmount;
+    order.makerSellTokenAmount = newMakerSellTokenAmount;
 
     result = SwapResult({
       outputToken: order.makerSellToken,
@@ -375,11 +426,17 @@ contract FundSwap is IFundSwapEvents, IFundSwapErrors, AccessControl, Reentrancy
       inputAmount: orderFillRequest.amountIn
     });
 
-    (order.makerBuyTokenAmount, order.makerSellTokenAmount, , ) = OrderLib
-      .calculateOrderAmountsAfterFill(orderFillRequest, order);
-    orderManager.updateOrder(orderFillRequest.orderId, order);
+    orderManager.updateOrder(orderFillRequest.orderHash, order);
 
-    emit PublicOrderPartiallyFilled(orderFillRequest.orderId, _msgSender());
+    emit PublicOrderPartiallyFilled(
+      orderFillRequest.orderHash,
+      orderManager.orderHashTotokenId(orderFillRequest.orderHash),
+      _msgSender(),
+      result.inputAmount,
+      result.outputAmount,
+      order.makerSellTokenAmount,
+      order.makerBuyTokenAmount
+    );
 
     return result;
   }
@@ -388,11 +445,25 @@ contract FundSwap is IFundSwapEvents, IFundSwapErrors, AccessControl, Reentrancy
     OrderFillRequest memory orderFillRequest,
     PublicOrder memory order,
     address tokenDestination
-  ) internal returns (uint256 fillAmountOut) {
-    (, , , fillAmountOut) = OrderLib.calculateOrderAmountsAfterFill(
-      orderFillRequest,
-      order
-    );
+  )
+    internal
+    returns (
+      uint256 newMakerBuyTokenAmount,
+      uint256 newMakerSellTokenAmount,
+      uint256 fillAmountOut
+    )
+  {
+    (newMakerBuyTokenAmount, newMakerSellTokenAmount, , fillAmountOut) = OrderLib
+      .calculateOrderAmountsAfterFill(orderFillRequest, order);
+
+    if (fillAmountOut < orderFillRequest.minAmountOut) {
+      revert FundSwap__InsufficientOutputAmount(
+        orderFillRequest.minAmountOut,
+        fillAmountOut
+      );
+    }
+
+    tokenTreasury.subtract(order.makerSellToken, fillAmountOut);
 
     PublicOrder memory modifiedOrder = PluginLib.runBeforeOrderFill(
       pluginCallConfigs,
@@ -403,7 +474,8 @@ contract FundSwap is IFundSwapEvents, IFundSwapErrors, AccessControl, Reentrancy
         makerBuyToken: order.makerBuyToken,
         makerSellTokenAmount: fillAmountOut,
         makerBuyTokenAmount: orderFillRequest.amountIn,
-        deadline: order.deadline
+        deadline: order.deadline,
+        creationTimestamp: order.creationTimestamp
       })
     );
     fillAmountOut = modifiedOrder.makerSellTokenAmount;
@@ -411,12 +483,11 @@ contract FundSwap is IFundSwapEvents, IFundSwapErrors, AccessControl, Reentrancy
     // pay the order owner
     IERC20(modifiedOrder.makerBuyToken).safeTransferFrom(
       _msgSender(),
-      orderManager.ownerOf(orderFillRequest.orderId),
+      orderManager.ownerOfByHash(orderFillRequest.orderHash),
       orderFillRequest.amountIn
     );
 
-    IERC20(order.makerSellToken).safeTransfer(tokenDestination, fillAmountOut);
-    tokenTreasury.subtract(order.makerSellToken, fillAmountOut);
+    IERC20(modifiedOrder.makerSellToken).safeTransfer(tokenDestination, fillAmountOut);
 
     modifiedOrder = PluginLib.runAfterOrderFill(pluginCallConfigs, modifiedOrder);
   }

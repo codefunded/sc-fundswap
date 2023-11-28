@@ -18,7 +18,7 @@ export const env = createEnv({
       .string()
       .min(64)
       .default('0x9665068343ccf6eb6da09f39f5ac3d2d5484c94ff3069224db093b68b7659b4c'), // random private key for vercel deployments
-    POLYGONSCAN_API_KEY: z.string().min(1),
+    POLYGONSCAN_API_KEY: z.string().min(1).default('FILL_ME_WHEN_DEPLOYING_TO_MAINNET'),
   },
   clientPrefix: 'PUBLIC_',
   client: {},

@@ -1,30 +1,49 @@
 import { loadFixture } from '@nomicfoundation/hardhat-network-helpers';
 import { ethers } from 'hardhat';
 import { prepareTestEnv } from '../utils/testHelpers/fixtures/prepareTestEnv';
-import { createTradeRoute, sortOrdersByPrice } from '../router';
+import { PublicOrder, createTradeRoute, sortOrdersByPrice } from '../router';
 import { expect } from 'chai';
+
+const hashPublicOrder = (
+  order: Omit<PublicOrder, 'id'>,
+  chainId = 31337 /* chainId of hardhat */,
+) =>
+  ethers.keccak256(
+    ethers.solidityPacked(
+      ['uint256', 'uint256', 'address', 'uint256', 'address', 'uint256', 'uint256'],
+      [
+        chainId,
+        order.deadline,
+        order.makerSellToken,
+        order.makerSellTokenAmount,
+        order.makerBuyToken,
+        order.makerBuyTokenAmount,
+        order.creationTimestamp,
+      ],
+    ),
+  );
 
 describe('Router', () => {
   describe('sortByPrice helper', () => {
     it('Should sort orders by price from the lowest to highest', () => {
-      const orders = [
-        {
-          id: 0n,
-          makerSellToken: '1',
-          makerBuyToken: '2',
-          makerSellTokenAmount: ethers.parseEther('3'),
-          makerBuyTokenAmount: ethers.parseEther('15'),
-          deadline: 0n,
-        },
-        {
-          id: 1n,
-          makerSellToken: '1',
-          makerBuyToken: '2',
-          makerSellTokenAmount: ethers.parseEther('2'),
-          makerBuyTokenAmount: ethers.parseEther('2'),
-          deadline: 0n,
-        },
-      ];
+      const order1 = {
+        makerSellToken: '1',
+        makerBuyToken: '2',
+        makerSellTokenAmount: ethers.parseEther('3'),
+        makerBuyTokenAmount: ethers.parseEther('15'),
+        deadline: 0n,
+        creationTimestamp: 0n,
+      };
+      const order2 = {
+        makerSellToken: '1',
+        makerBuyToken: '2',
+        makerSellTokenAmount: ethers.parseEther('2'),
+        makerBuyTokenAmount: ethers.parseEther('2'),
+        deadline: 0n,
+        creationTimestamp: 0n,
+      };
+
+      const orders = [order1, order2];
       const sortedByPrice = [...orders].sort(sortOrdersByPrice);
       expect(sortedByPrice[0]).to.be.equal(orders[1]);
       expect(sortedByPrice[1]).to.be.equal(orders[0]);
@@ -44,7 +63,7 @@ describe('Router', () => {
       [],
     );
 
-    expect(path.map((step) => step.orderId)).to.be.deep.equal([]);
+    expect(path.map((step) => step.orderHash)).to.be.deep.equal([]);
   });
 
   it('router should route through the best path when exact input is specified', async () => {
@@ -57,28 +76,28 @@ describe('Router', () => {
     ]);
     const orders = [
       {
-        id: 0n,
         makerSellToken: erc20TokenAddress,
         makerSellTokenAmount: ethers.parseEther('1'),
         makerBuyToken: wmaticTokenAddress,
         makerBuyTokenAmount: ethers.parseEther('4'),
         deadline: 0n,
+        creationTimestamp: 0n,
       },
       {
-        id: 1n,
         makerSellToken: erc20TokenAddress,
         makerSellTokenAmount: ethers.parseEther('1'),
         makerBuyToken: wmaticTokenAddress,
         makerBuyTokenAmount: ethers.parseEther('5'),
         deadline: 0n,
+        creationTimestamp: 0n,
       },
       {
-        id: 2n,
         makerSellToken: erc20TokenAddress,
         makerSellTokenAmount: ethers.parseEther('1'),
         makerBuyToken: wmaticTokenAddress,
         makerBuyTokenAmount: ethers.parseEther('2'),
         deadline: 0n,
+        creationTimestamp: 0n,
       },
     ];
     await fundSwap.createPublicOrder(orders[0]);
@@ -92,9 +111,11 @@ describe('Router', () => {
         sourceToken: wmaticTokenAddress,
         sourceAmount: ethers.parseEther('2'),
       },
-      orders,
+      orders.map((order) => ({ ...order, id: hashPublicOrder(order) })),
     );
-    expect(pathSingle.map((step) => step.orderId)).to.be.deep.equal([2]);
+    expect(pathSingle.map((step) => step.orderHash)).to.be.deep.equal([
+      hashPublicOrder(orders[2]),
+    ]);
 
     const pathTwo = createTradeRoute(
       {
@@ -103,9 +124,12 @@ describe('Router', () => {
         sourceToken: wmaticTokenAddress,
         sourceAmount: ethers.parseEther('6'),
       },
-      orders,
+      orders.map((order) => ({ ...order, id: hashPublicOrder(order) })),
     );
-    expect(pathTwo.map((step) => step.orderId)).to.be.deep.equal([2, 0]);
+    expect(pathTwo.map((step) => step.orderHash)).to.be.deep.equal([
+      hashPublicOrder(orders[2]),
+      hashPublicOrder(orders[0]),
+    ]);
 
     const pathTriple = createTradeRoute(
       {
@@ -114,10 +138,14 @@ describe('Router', () => {
         sourceToken: await wmaticToken.getAddress(),
         sourceAmount: ethers.parseEther('7'),
       },
-      orders,
+      orders.map((order) => ({ ...order, id: hashPublicOrder(order) })),
     );
 
-    expect(pathTriple.map((step) => step.orderId)).to.be.deep.equal([2, 0, 1]);
+    expect(pathTriple.map((step) => step.orderHash)).to.be.deep.equal([
+      hashPublicOrder(orders[2]),
+      hashPublicOrder(orders[0]),
+      hashPublicOrder(orders[1]),
+    ]);
   });
 
   it('getBestTradePathForExactOutput router function should route through the best path', async () => {
@@ -130,28 +158,28 @@ describe('Router', () => {
     ]);
     const orders = [
       {
-        id: 0n,
         makerSellToken: erc20TokenAddress,
         makerSellTokenAmount: ethers.parseEther('1'),
         makerBuyToken: wmaticTokenAddress,
         makerBuyTokenAmount: ethers.parseEther('4'),
         deadline: 0n,
+        creationTimestamp: 0n,
       },
       {
-        id: 1n,
         makerSellToken: erc20TokenAddress,
         makerSellTokenAmount: ethers.parseEther('1'),
         makerBuyToken: wmaticTokenAddress,
         makerBuyTokenAmount: ethers.parseEther('5'),
         deadline: 0n,
+        creationTimestamp: 0n,
       },
       {
-        id: 2n,
         makerSellToken: erc20TokenAddress,
         makerSellTokenAmount: ethers.parseEther('1'),
         makerBuyToken: wmaticTokenAddress,
         makerBuyTokenAmount: ethers.parseEther('2'),
         deadline: 0n,
+        creationTimestamp: 0n,
       },
     ];
     await fundSwap.createPublicOrder(orders[0]);
@@ -165,9 +193,11 @@ describe('Router', () => {
         sourceToken: wmaticTokenAddress,
         destinationAmount: ethers.parseEther('1'),
       },
-      orders,
+      orders.map((order) => ({ ...order, id: hashPublicOrder(order) })),
     );
-    expect(pathSingle.map((step) => step.orderId)).to.be.deep.equal([2]);
+    expect(pathSingle.map((step) => step.orderHash)).to.be.deep.equal([
+      hashPublicOrder(orders[2]),
+    ]);
 
     const pathTwo = createTradeRoute(
       {
@@ -176,9 +206,12 @@ describe('Router', () => {
         sourceToken: wmaticTokenAddress,
         destinationAmount: ethers.parseEther('2'),
       },
-      orders,
+      orders.map((order) => ({ ...order, id: hashPublicOrder(order) })),
     );
-    expect(pathTwo.map((step) => step.orderId)).to.be.deep.equal([2, 0]);
+    expect(pathTwo.map((step) => step.orderHash)).to.be.deep.equal([
+      hashPublicOrder(orders[2]),
+      hashPublicOrder(orders[0]),
+    ]);
 
     const pathTriple = createTradeRoute(
       {
@@ -187,8 +220,12 @@ describe('Router', () => {
         sourceToken: await wmaticToken.getAddress(),
         destinationAmount: ethers.parseEther('3'),
       },
-      orders,
+      orders.map((order) => ({ ...order, id: hashPublicOrder(order) })),
     );
-    expect(pathTriple.map((step) => step.orderId)).to.be.deep.equal([2, 0, 1]);
+    expect(pathTriple.map((step) => step.orderHash)).to.be.deep.equal([
+      hashPublicOrder(orders[2]),
+      hashPublicOrder(orders[0]),
+      hashPublicOrder(orders[1]),
+    ]);
   });
 });

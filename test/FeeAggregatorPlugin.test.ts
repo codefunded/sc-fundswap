@@ -11,7 +11,9 @@ describe('FeeAggregatorPlugin', () => {
     const currentFee = await feeAggregatorPlugin.defaultFee();
     expect(currentFee).to.equal(DEFAULT_FEE);
     const maxFee = await feeAggregatorPlugin.MAX_FEE();
-    expect(maxFee).to.equal(10000);
+    expect(maxFee).to.equal(300); // 3%
+    const basisPointsMax = await feeAggregatorPlugin.BASIS_POINTS_MAX();
+    expect(basisPointsMax).to.equal(10000); // 100%
   });
 
   it('should assign the owner', async () => {
@@ -50,19 +52,22 @@ describe('FeeAggregatorPlugin', () => {
     const [, user2] = await ethers.getSigners();
 
     await erc20Token.approve(fundSwap.getAddress(), ethers.parseEther('1'));
-    await fundSwap.createPublicOrder({
+    const order = {
       makerSellToken: erc20Token.getAddress(),
       makerSellTokenAmount: ethers.parseEther('1'),
       makerBuyToken: wmaticToken.getAddress(),
       makerBuyTokenAmount: ethers.parseEther('2'),
       deadline: 0,
-    });
+      creationTimestamp: 0,
+    };
+    const orderHash = await fundSwap.getPublicOrderHash(order);
+    await fundSwap.createPublicOrder(order);
 
     await wmaticToken
       .connect(user2)
       .approve(fundSwap.getAddress(), ethers.parseEther('2'));
 
-    await fundSwap.connect(user2).fillPublicOrder(0, user2.getAddress());
+    await fundSwap.connect(user2).fillPublicOrder(orderHash, user2.getAddress());
 
     expect(await erc20Token.balanceOf(fundSwap.getAddress())).to.equal(
       ethers.parseEther('0.0024'),
@@ -74,13 +79,16 @@ describe('FeeAggregatorPlugin', () => {
     const [user1, user2] = await ethers.getSigners();
 
     await erc20Token.approve(fundSwap.getAddress(), ethers.parseEther('1'));
-    await fundSwap.createPublicOrder({
+    const order = {
       makerSellToken: erc20Token.getAddress(),
       makerSellTokenAmount: ethers.parseEther('1'),
       makerBuyToken: wmaticToken.getAddress(),
       makerBuyTokenAmount: ethers.parseEther('2'),
       deadline: 0,
-    });
+      creationTimestamp: 0,
+    };
+    const orderHash = await fundSwap.getPublicOrderHash(order);
+    await fundSwap.createPublicOrder(order);
 
     const user1BalanceBeforeSwap = await erc20Token.balanceOf(user1.getAddress());
 
@@ -88,10 +96,24 @@ describe('FeeAggregatorPlugin', () => {
       .connect(user2)
       .approve(fundSwap.getAddress(), ethers.parseEther('2'));
 
-    await fundSwap.connect(user2).fillPublicOrder(0, user2.getAddress());
+    expect(await fundSwap.getRequiredTreasuryBalance(erc20Token.getAddress())).to.equal(
+      ethers.parseEther('1'),
+    );
+    await expect(
+      fundSwap.withdraw(erc20Token.getAddress(), ethers.parseEther('0.0024')),
+    ).to.be.revertedWithCustomError(
+      fundSwap,
+      'FundSwap__WithdrawalViolatesFullBackingRequirement',
+    );
+
+    await fundSwap.connect(user2).fillPublicOrder(orderHash, user2.getAddress());
 
     expect(await erc20Token.balanceOf(fundSwap.getAddress())).to.equal(
       ethers.parseEther('0.0024'),
+    );
+
+    expect(await fundSwap.getRequiredTreasuryBalance(erc20Token.getAddress())).to.equal(
+      0n,
     );
 
     await fundSwap.withdraw(erc20Token.getAddress(), ethers.parseEther('0.0024'));
@@ -108,13 +130,15 @@ describe('FeeAggregatorPlugin', () => {
     const { fundSwap, erc20Token, wmaticToken } = await loadFixture(prepareTestEnv);
 
     await erc20Token.approve(fundSwap.getAddress(), ethers.parseEther('1'));
-    await fundSwap.createPublicOrder({
+    const order = {
       makerSellToken: erc20Token.getAddress(),
       makerSellTokenAmount: ethers.parseEther('1'),
       makerBuyToken: wmaticToken.getAddress(),
       makerBuyTokenAmount: ethers.parseEther('2'),
       deadline: 0,
-    });
+      creationTimestamp: 0,
+    };
+    await fundSwap.createPublicOrder(order);
 
     expect(
       fundSwap.withdraw(erc20Token.getAddress(), ethers.parseEther('1')),
@@ -130,13 +154,16 @@ describe('FeeAggregatorPlugin', () => {
     const [, user2] = await ethers.getSigners();
 
     await erc20Token.approve(fundSwap.getAddress(), ethers.parseEther('1'));
-    await fundSwap.createPublicOrder({
+    const order = {
       makerSellToken: erc20Token.getAddress(),
       makerSellTokenAmount: ethers.parseEther('1'),
       makerBuyToken: wmaticToken.getAddress(),
       makerBuyTokenAmount: ethers.parseEther('2'),
       deadline: 0,
-    });
+      creationTimestamp: 0,
+    };
+    const orderHash = await fundSwap.getPublicOrderHash(order);
+    await fundSwap.createPublicOrder(order);
 
     await wmaticToken
       .connect(user2)
@@ -144,26 +171,29 @@ describe('FeeAggregatorPlugin', () => {
 
     await feeAggregatorPlugin.setFeeForAsset(erc20Token.getAddress(), 100);
 
-    await fundSwap.connect(user2).fillPublicOrder(0, user2.getAddress());
+    await fundSwap.connect(user2).fillPublicOrder(orderHash, user2.getAddress());
 
     expect(await erc20Token.balanceOf(fundSwap.getAddress())).to.equal(
       ethers.parseEther('0.01'),
     );
 
     await usdcToken.approve(fundSwap.getAddress(), ethers.parseUnits('1', 6));
-    await fundSwap.createPublicOrder({
+    const order2 = {
       makerSellToken: usdcToken.getAddress(),
       makerSellTokenAmount: ethers.parseUnits('1', 6),
       makerBuyToken: wmaticToken.getAddress(),
       makerBuyTokenAmount: ethers.parseEther('2'),
       deadline: 0,
-    });
+      creationTimestamp: 0,
+    };
+    const order2Hash = await fundSwap.getPublicOrderHash(order2);
+    await fundSwap.createPublicOrder(order2);
 
     await wmaticToken
       .connect(user2)
       .approve(fundSwap.getAddress(), ethers.parseEther('2'));
 
-    await fundSwap.connect(user2).fillPublicOrder(1, user2.getAddress());
+    await fundSwap.connect(user2).fillPublicOrder(order2Hash, user2.getAddress());
 
     // default fee is 0.24%, if not set for a specific token
     expect(await usdcToken.balanceOf(fundSwap.getAddress())).to.equal(
@@ -178,12 +208,13 @@ describe('FeeAggregatorPlugin', () => {
     await feeAggregatorPlugin.setFeeForAsset(erc20Token.getAddress(), 100);
     await feeAggregatorPlugin.setFeeForAsset(usdcToken.getAddress(), 200);
 
-    const fees = await feeAggregatorPlugin.getFeesForAllAssets();
+    const fees = await Promise.all([
+      feeAggregatorPlugin.getFeeForAsset(erc20Token.getAddress()),
+      feeAggregatorPlugin.getFeeForAsset(usdcToken.getAddress()),
+    ]);
 
-    expect(fees.assets[0]).to.equal(await erc20Token.getAddress());
-    expect(fees.fees[0]).to.equal(100);
-    expect(fees.assets[1]).to.equal(await usdcToken.getAddress());
-    expect(fees.fees[1]).to.equal(200);
+    expect(fees[0]).to.equal(100);
+    expect(fees[1]).to.equal(200);
   });
 
   it('should allow to disable swap fee by setting the fee to 0', async () => {
@@ -193,24 +224,26 @@ describe('FeeAggregatorPlugin', () => {
 
     await feeAggregatorPlugin.setFeeForAsset(erc20Token.getAddress(), 0);
 
-    const fees = await feeAggregatorPlugin.getFeesForAllAssets();
-    expect(fees.assets[0]).to.equal(await erc20Token.getAddress());
-    expect(fees.fees[0]).to.equal(0);
+    const fee = await feeAggregatorPlugin.getFeeForAsset(erc20Token.getAddress());
+    expect(fee).to.equal(0);
 
     await erc20Token.approve(fundSwap.getAddress(), ethers.parseEther('1'));
-    await fundSwap.createPublicOrder({
+    const order = {
       makerSellToken: erc20Token.getAddress(),
       makerSellTokenAmount: ethers.parseEther('1'),
       makerBuyToken: wmaticToken.getAddress(),
       makerBuyTokenAmount: ethers.parseEther('2'),
       deadline: 0,
-    });
+      creationTimestamp: 0,
+    };
+    const orderHash = await fundSwap.getPublicOrderHash(order);
+    await fundSwap.createPublicOrder(order);
 
     await wmaticToken
       .connect(user2)
       .approve(fundSwap.getAddress(), ethers.parseEther('2'));
 
-    await fundSwap.connect(user2).fillPublicOrder(0, user2.getAddress());
+    await fundSwap.connect(user2).fillPublicOrder(orderHash, user2.getAddress());
 
     expect(await erc20Token.balanceOf(fundSwap.getAddress())).to.equal(0);
   });
@@ -264,18 +297,21 @@ describe('FeeAggregatorPlugin', () => {
     );
 
     await erc20Token.approve(fundSwap.getAddress(), ethers.parseEther('1'));
-    await fundSwap.createPublicOrder({
+    const order = {
       makerSellToken: erc20Token.getAddress(),
       makerSellTokenAmount: ethers.parseEther('1'),
       makerBuyToken: wmaticToken.getAddress(),
       makerBuyTokenAmount: ethers.parseEther('2'),
       deadline: 0,
-    });
+      creationTimestamp: 0,
+    };
+    const orderHash = await fundSwap.getPublicOrderHash(order);
+    await fundSwap.createPublicOrder(order);
 
     await wmaticToken
       .connect(user2)
       .approve(fundSwap.getAddress(), ethers.parseEther('2'));
-    await fundSwap.connect(user2).fillPublicOrder(0, user2.getAddress());
+    await fundSwap.connect(user2).fillPublicOrder(orderHash, user2.getAddress());
 
     expect(await erc20Token.balanceOf(fundSwap.getAddress())).to.equal(
       ethers.parseEther('0.01'),
@@ -283,18 +319,21 @@ describe('FeeAggregatorPlugin', () => {
     await fundSwap.withdraw(erc20Token.getAddress(), ethers.parseEther('0.01'));
 
     await erc20Token.approve(fundSwap.getAddress(), ethers.parseEther('2'));
-    await fundSwap.createPublicOrder({
+    const order2 = {
       makerSellToken: erc20Token.getAddress(),
       makerSellTokenAmount: ethers.parseEther('2'),
       makerBuyToken: wmaticToken.getAddress(),
       makerBuyTokenAmount: ethers.parseEther('4'),
       deadline: 0,
-    });
+      creationTimestamp: 0,
+    };
+    const orderHash2 = await fundSwap.getPublicOrderHash(order2);
+    await fundSwap.createPublicOrder(order2);
 
     await wmaticToken
       .connect(user2)
       .approve(fundSwap.getAddress(), ethers.parseEther('4'));
-    await fundSwap.connect(user2).fillPublicOrder(1, user2.getAddress());
+    await fundSwap.connect(user2).fillPublicOrder(orderHash2, user2.getAddress());
 
     expect(await erc20Token.balanceOf(fundSwap.getAddress())).to.equal(
       ethers.parseEther('0.016'), // 0.8% of 2
@@ -322,7 +361,12 @@ describe('FeeAggregatorPlugin', () => {
       [],
     );
 
-    expect(await feeAggregatorPlugin.getFeeLevelsForAllPairs()).to.be.deep.equal([]);
+    expect(
+      await feeAggregatorPlugin.getFeeLevelsForPair(
+        erc20Token.getAddress(),
+        wmaticToken.getAddress(),
+      ),
+    ).to.be.deep.equal([]);
   });
 
   it('should allow to get all fee levels for a pair', async () => {
@@ -403,30 +447,30 @@ describe('FeeAggregatorPlugin', () => {
       ],
     );
 
-    const pairFees = await feeAggregatorPlugin.getFeeLevelsForAllPairs();
-    if ((await wmaticToken.getAddress()) < (await erc20Token.getAddress())) {
-      expect(pairFees[0].asset1).to.equal(await wmaticToken.getAddress());
-      expect(pairFees[0].asset2).to.equal(await erc20Token.getAddress());
-    } else {
-      expect(pairFees[0].asset1).to.equal(await erc20Token.getAddress());
-      expect(pairFees[0].asset2).to.equal(await wmaticToken.getAddress());
-    }
+    const pairFees = await Promise.all([
+      feeAggregatorPlugin.getFeeLevelsForPair(
+        erc20Token.getAddress(),
+        wmaticToken.getAddress(),
+      ),
+      feeAggregatorPlugin.getFeeLevelsForPair(
+        '0x0000000000000000000000000000000000000001',
+        '0x0000000000000000000000000000000000000002',
+      ),
+    ]);
 
-    expect(pairFees[0].feeLevels[0].fee).to.equal(100);
-    expect(pairFees[0].feeLevels[0].minAmount).to.equal(0);
-    expect(pairFees[0].feeLevels[1].fee).to.equal(50);
-    expect(pairFees[0].feeLevels[1].minAmount).to.equal(ethers.parseEther('2'));
-    expect(pairFees[0].feeLevels[2].fee).to.equal(25);
-    expect(pairFees[0].feeLevels[2].minAmount).to.equal(ethers.parseEther('3'));
+    expect(pairFees[0][0].fee).to.equal(100);
+    expect(pairFees[0][0].minAmount).to.equal(0);
+    expect(pairFees[0][1].fee).to.equal(50);
+    expect(pairFees[0][1].minAmount).to.equal(ethers.parseEther('2'));
+    expect(pairFees[0][2].fee).to.equal(25);
+    expect(pairFees[0][2].minAmount).to.equal(ethers.parseEther('3'));
 
-    expect(pairFees[1].asset1).to.equal('0x0000000000000000000000000000000000000001');
-    expect(pairFees[1].asset2).to.equal('0x0000000000000000000000000000000000000002');
-    expect(pairFees[1].feeLevels[0].fee).to.equal(200);
-    expect(pairFees[1].feeLevels[0].minAmount).to.equal(0);
-    expect(pairFees[1].feeLevels[1].fee).to.equal(100);
-    expect(pairFees[1].feeLevels[1].minAmount).to.equal(ethers.parseEther('2'));
-    expect(pairFees[1].feeLevels[2].fee).to.equal(50);
-    expect(pairFees[1].feeLevels[2].minAmount).to.equal(ethers.parseEther('3'));
+    expect(pairFees[1][0].fee).to.equal(200);
+    expect(pairFees[1][0].minAmount).to.equal(0);
+    expect(pairFees[1][1].fee).to.equal(100);
+    expect(pairFees[1][1].minAmount).to.equal(ethers.parseEther('2'));
+    expect(pairFees[1][2].fee).to.equal(50);
+    expect(pairFees[1][2].minAmount).to.equal(ethers.parseEther('3'));
   });
 
   it('should have the same fee no matter which token is a base token in a pair', async () => {
@@ -446,36 +490,42 @@ describe('FeeAggregatorPlugin', () => {
     );
 
     await erc20Token.approve(fundSwap.getAddress(), ethers.parseEther('2'));
-    await fundSwap.createPublicOrder({
+    const order = {
       makerSellToken: erc20Token.getAddress(),
       makerSellTokenAmount: ethers.parseEther('2'),
       makerBuyToken: wmaticToken.getAddress(),
       makerBuyTokenAmount: ethers.parseEther('4'),
       deadline: 0,
-    });
+      creationTimestamp: 0,
+    };
+    const orderHash = await fundSwap.getPublicOrderHash(order);
+    await fundSwap.createPublicOrder(order);
 
     await wmaticToken
       .connect(user2)
       .approve(fundSwap.getAddress(), ethers.parseEther('4'));
-    await fundSwap.connect(user2).fillPublicOrder(0, user2.getAddress());
+    await fundSwap.connect(user2).fillPublicOrder(orderHash, user2.getAddress());
 
     expect(await erc20Token.balanceOf(fundSwap.getAddress())).to.equal(
       ethers.parseEther('0.02'), // 1% of 2
     );
 
     await wmaticToken.approve(fundSwap.getAddress(), ethers.parseEther('2'));
-    await fundSwap.createPublicOrder({
+    const order2 = {
       makerSellToken: wmaticToken.getAddress(),
       makerSellTokenAmount: ethers.parseEther('2'),
       makerBuyToken: erc20Token.getAddress(),
       makerBuyTokenAmount: ethers.parseEther('4'),
       deadline: 0,
-    });
+      creationTimestamp: 0,
+    };
+    const order2Hash = await fundSwap.getPublicOrderHash(order2);
+    await fundSwap.createPublicOrder(order2);
 
     await erc20Token
       .connect(user2)
       .approve(fundSwap.getAddress(), ethers.parseEther('4'));
-    await fundSwap.connect(user2).fillPublicOrder(1, user2.getAddress());
+    await fundSwap.connect(user2).fillPublicOrder(order2Hash, user2.getAddress());
 
     expect(await wmaticToken.balanceOf(fundSwap.getAddress())).to.equal(
       ethers.parseEther('0.02'), // 1% of 2

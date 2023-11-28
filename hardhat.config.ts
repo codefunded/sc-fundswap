@@ -1,29 +1,24 @@
 import { HardhatUserConfig } from 'hardhat/config';
-// import 'hardhat-diamond-abi';
+import '@nomicfoundation/hardhat-ignition';
 import '@nomicfoundation/hardhat-toolbox';
 import 'hardhat-deploy';
 import { env } from './env';
-// import { createDiamondDeduper } from './utils/diamondDeduper';
 
 const config: HardhatUserConfig = {
   solidity: {
     compilers: [
       {
-        version: '0.8.21',
+        version: '0.8.23',
         settings: {
           viaIR: true,
           optimizer: {
             enabled: true,
             runs: 1000,
-          },
-        },
-      },
-      {
-        version: '0.6.6',
-        settings: {
-          optimizer: {
-            enabled: true,
-            runs: 1000,
+            details: {
+              yulDetails: {
+                optimizerSteps: 'u',
+              },
+            },
           },
         },
       },
@@ -32,16 +27,10 @@ const config: HardhatUserConfig = {
   defaultNetwork: 'hardhat',
   networks: {
     localhost: {
-      forking: {
-        url: env.POLYGON_MAINNET_RPC,
-      },
       chainId: 31337,
     },
     hardhat: {
-      forking: {
-        url: env.POLYGON_MAINNET_RPC,
-        blockNumber: 43204774,
-      },
+      initialBaseFeePerGas: 0,
       chainId: 31337,
       accounts: [
         {
@@ -60,7 +49,7 @@ const config: HardhatUserConfig = {
       accounts: [env.PRIVATE_KEY],
     },
     mumbai: {
-      url: env.POLYGON_MUMBAI_RPC!,
+      url: env.POLYGON_MUMBAI_RPC,
       chainId: 80001,
       gasPrice: 35000000000,
       accounts: [env.PRIVATE_KEY],
@@ -71,10 +60,9 @@ const config: HardhatUserConfig = {
       default: 0,
     },
   },
-  // diamondAbi: {
-  //   name: 'DiamondAggregate',
-  //   filter: createDiamondDeduper(),
-  // },
+  etherscan: {
+    apiKey: env.POLYGONSCAN_API_KEY,
+  },
 };
 
 export default config;

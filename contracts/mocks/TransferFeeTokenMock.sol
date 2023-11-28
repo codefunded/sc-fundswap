@@ -6,10 +6,8 @@ import { ERC20Burnable } from '@openzeppelin/contracts/token/ERC20/extensions/ER
 import { AccessControl } from '@openzeppelin/contracts/access/AccessControl.sol';
 import { ERC20Permit } from '@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol';
 
-/// @title Mock ERC20 mintable token for testing purposes
-contract MockERC20 is ERC20, ERC20Burnable, AccessControl, ERC20Permit {
-  bytes32 public constant MINTER_ROLE = keccak256('MINTER_ROLE');
-
+/// @title Mock ERC20 with a 1% fee on transfer for testing purposes
+contract TransferFeeTokenMock is ERC20, ERC20Burnable, AccessControl, ERC20Permit {
   constructor(
     string memory _name,
     string memory _symbol,
@@ -17,10 +15,16 @@ contract MockERC20 is ERC20, ERC20Burnable, AccessControl, ERC20Permit {
   ) ERC20(_name, _symbol) ERC20Permit(_name) {
     _mint(_msgSender(), _initialSupply);
     _grantRole(DEFAULT_ADMIN_ROLE, _msgSender());
-    _grantRole(MINTER_ROLE, _msgSender());
   }
 
-  function mint(address to, uint256 amount) public onlyRole(MINTER_ROLE) {
-    _mint(to, amount);
+  function _update(address from, address to, uint256 amount) internal virtual override {
+    uint256 fee = amount / 100; // 1% fee on transfer
+    super._update(from, address(this), fee);
+    super._update(from, to, amount - fee);
+  }
+
+  function withdrawTransferFees(address to) public onlyRole(DEFAULT_ADMIN_ROLE) {
+    uint256 balance = balanceOf(address(this));
+    transfer(to, balance);
   }
 }

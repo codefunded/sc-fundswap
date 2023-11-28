@@ -25,6 +25,9 @@ const deployFundSwap: DeployFunction = async function ({
 
   const fundswap = await ethers.getContractAt('FundSwap', fundswapDeployment.address);
   log(`Order manager deployed at ${await fundswap.orderManager()}`);
+  if (networkConfig.shouldVerifyContracts) {
+    await verifyContract(await fundswap.orderManager(), []);
+  }
 
   const batchExecutorDeployment = await deploy('FundSwapBatchExecutor', {
     from: deployer,
@@ -40,4 +43,4 @@ const deployFundSwap: DeployFunction = async function ({
 
 export default deployFundSwap;
 
-deployFundSwap.tags = ['fundswap'];
+deployFundSwap.tags = ['fundswap', 'core'];

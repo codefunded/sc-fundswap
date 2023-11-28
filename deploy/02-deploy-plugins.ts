@@ -1,11 +1,11 @@
 import { DeployFunction } from 'hardhat-deploy/types';
-import { getNamedAccounts } from 'hardhat';
+import { ethers, getNamedAccounts } from 'hardhat';
 import { DEFAULT_FEE } from '../utils/constants';
 import { getNetworkConfig } from '../networkConfigs';
 import { verifyContract } from '../utils/verifyContract';
 
 const deployPlugins: DeployFunction = async function ({ deployments, getChainId }) {
-  const { deploy, log } = deployments;
+  const { deploy, log, get } = deployments;
   const { deployer } = await getNamedAccounts();
   const chainId = await getChainId();
   const networkConfig = getNetworkConfig(chainId);
@@ -34,6 +34,23 @@ const deployPlugins: DeployFunction = async function ({ deployments, getChainId 
       tokenWhitelistPluginDeployment.address,
       tokenWhitelistPluginDeployment.args!,
     );
+  }
+
+  const fundswap = await ethers.getContractAt(
+    'FundSwap',
+    (await get('FundSwap')).address,
+  );
+  const activePlugins = await fundswap.getPlugins();
+  if (!activePlugins.includes(feeAggregatorPluginDeployment.address)) {
+    await (
+      await fundswap.enablePlugin(feeAggregatorPluginDeployment.address, '0x')
+    ).wait(networkConfig.confirmations);
+  }
+
+  if (!activePlugins.includes(tokenWhitelistPluginDeployment.address)) {
+    await (
+      await fundswap.enablePlugin(tokenWhitelistPluginDeployment.address, '0x')
+    ).wait(networkConfig.confirmations);
   }
 
   log('-----Plugins deployed-----');

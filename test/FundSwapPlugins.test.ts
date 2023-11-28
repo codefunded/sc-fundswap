@@ -45,4 +45,28 @@ describe('FundSwap plugin management', () => {
       await feeAggregatorPlugin.getAddress(),
     ]);
   });
+
+  it('should not allow plugin to modify the maker sell token or maker buy token', async () => {
+    const { fundSwap, erc20Token, wmaticToken } = await loadFixture(prepareTestEnv);
+
+    const TokenAddressSwapPluginFactory = await ethers.getContractFactory(
+      'TokenAddressSwapMockPlugin',
+    );
+    const tokenAddressSwapPluginInstance = await TokenAddressSwapPluginFactory.deploy();
+
+    await fundSwap.enablePlugin(await tokenAddressSwapPluginInstance.getAddress(), '0x');
+
+    await erc20Token.approve(await fundSwap.getAddress(), ethers.parseEther('1'));
+
+    await expect(
+      fundSwap.createPublicOrder({
+        makerSellToken: erc20Token.getAddress(),
+        makerSellTokenAmount: ethers.parseEther('1'),
+        makerBuyToken: wmaticToken.getAddress(),
+        makerBuyTokenAmount: ethers.parseEther('1'),
+        deadline: 0,
+        creationTimestamp: 0,
+      }),
+    ).to.be.revertedWithCustomError(fundSwap, 'PluginLib__TokenAddressChangeNotAllowed');
+  });
 });

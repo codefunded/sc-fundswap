@@ -1,4 +1,4 @@
-import { AddressLike, BigNumberish } from 'ethers';
+import { AddressLike, BigNumberish, BytesLike } from 'ethers';
 import {
   OrderFillRequestStruct,
   PublicOrderStruct,
@@ -8,7 +8,7 @@ export type PublicOrder = {
   [key in keyof PublicOrderStruct]: Awaited<PublicOrderStruct[key]> extends BigNumberish
     ? bigint
     : Awaited<AddressLike>;
-} & { id: bigint };
+} & { id: BytesLike };
 
 export type FillRequest = {
   sourceToken: string;
@@ -24,14 +24,17 @@ export type FillRequest = {
     }
 );
 
-const calculatePrice = (order: PublicOrder) => {
+const calculatePrice = (order: Omit<PublicOrder, 'id'>) => {
   const price =
     ((order.makerBuyTokenAmount as bigint) * BigInt(1e18)) /
     (order.makerSellTokenAmount as bigint);
   return price;
 };
 
-export const sortOrdersByPrice = (order1: PublicOrder, order2: PublicOrder) => {
+export const sortOrdersByPrice = (
+  order1: Omit<PublicOrder, 'id'>,
+  order2: Omit<PublicOrder, 'id'>,
+) => {
   const price1 = calculatePrice(order1);
   const price2 = calculatePrice(order2);
   return price1 < price2 ? -1 : 1;
@@ -49,8 +52,9 @@ interface Path {
 const mapOrderToExactInputFillRequest = (
   order: PublicOrder,
 ): BigNumberify<OrderFillRequestStruct> => ({
-  orderId: order.id,
+  orderHash: order.id,
   amountIn: order.makerSellTokenAmount,
+  minAmountOut: 0n, // TODO: add actual value of minAmountOut
 });
 
 /**

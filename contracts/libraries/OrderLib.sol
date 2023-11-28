@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.21;
+pragma solidity 0.8.23;
 
 import '@openzeppelin/contracts/utils/math/Math.sol';
 import '../OrderStructs.sol';
@@ -52,7 +52,8 @@ library OrderLib {
     uint256 makerSellTokenAmountBeforeSwap = order.makerSellTokenAmount;
     orderMakerSellTokenAmount = order.makerSellTokenAmount.mulDiv(
       orderMakerBuyTokenAmount,
-      makerBuyTokenAmountBeforeSwap
+      makerBuyTokenAmountBeforeSwap,
+      Math.Rounding.Ceil
     );
     inputAmount = request.amountIn;
     outputAmount = makerSellTokenAmountBeforeSwap - orderMakerSellTokenAmount;

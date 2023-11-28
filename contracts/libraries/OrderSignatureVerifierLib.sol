@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.21;
+pragma solidity 0.8.23;
 
 import '@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol';
 import '@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol';
 import '../OrderStructs.sol';
 
 /**
- * @notice Verifies the signature of a private order and hashes the order data in the way that
+ * @notice Verifies the signature of orders and hashes the order data in the way that
  * later the signer can be recovered from the signature.
  */
 library OrderSignatureVerifierLib {
@@ -27,7 +27,26 @@ library OrderSignatureVerifierLib {
    * @notice Hashes the order data in the way that later the signer can be recovered from the signature.
    * @param order the order data
    */
-  function hashOrder(PrivateOrder memory order) internal view returns (bytes32) {
+  function hashPublicOrder(PublicOrder memory order) internal view returns (bytes32) {
+    return
+      keccak256(
+        abi.encodePacked(
+          _getChainId(),
+          order.deadline,
+          order.makerSellToken,
+          order.makerSellTokenAmount,
+          order.makerBuyToken,
+          order.makerBuyTokenAmount,
+          order.creationTimestamp
+        )
+      );
+  }
+
+  /**
+   * @notice Hashes the order data in the way that later the signer can be recovered from the signature.
+   * @param order the order data
+   */
+  function hashPrivateOrder(PrivateOrder memory order) internal view returns (bytes32) {
     return
       keccak256(
         abi.encodePacked(
@@ -50,12 +69,12 @@ library OrderSignatureVerifierLib {
    * @param orderHash hash of the order data
    * @param signature signature of the order data
    */
-  function verifyOrder(
+  function verifyPrivateOrder(
     PrivateOrder memory order,
     bytes32 orderHash,
     bytes memory signature
   ) internal view returns (bool) {
-    if (hashOrder(order) != orderHash) {
+    if (hashPrivateOrder(order) != orderHash) {
       revert OrderSignatureVerifier__InvalidOrderHash();
     }
 

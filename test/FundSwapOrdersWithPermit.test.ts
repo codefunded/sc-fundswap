@@ -27,6 +27,7 @@ describe('Orders with permit', () => {
         makerBuyToken: wmaticToken.getAddress(),
         makerBuyTokenAmount: ethers.parseEther('1'),
         deadline: 0,
+        creationTimestamp: 0,
       },
       deadline,
       v,
@@ -35,7 +36,8 @@ describe('Orders with permit', () => {
     );
 
     const tokenId = await fundSwapOrderManager.tokenOfOwnerByIndex(user1.getAddress(), 0);
-    const order = await fundSwapOrderManager.getOrder(tokenId);
+    const orderHash = await fundSwapOrderManager.tokenIdToOrderHash(tokenId);
+    const order = await fundSwapOrderManager.getOrder(orderHash);
     expect(await fundSwapOrderManager.balanceOf(user1.getAddress())).to.equal(1);
     expect(order.makerSellToken).to.equal(await erc20Token.getAddress());
     expect(order.makerSellTokenAmount).to.equal(ethers.parseEther('1'));
@@ -61,6 +63,7 @@ describe('Orders with permit', () => {
       makerBuyToken: erc20Token.getAddress(),
       makerBuyTokenAmount: ethers.parseEther('1'),
       deadline: 0,
+      creationTimestamp: 0,
     });
 
     const deadline = MAX_UINT256;
@@ -73,7 +76,14 @@ describe('Orders with permit', () => {
 
     await fundSwap
       .connect(user2)
-      .fillPublicOrderWithPermit(0, user2.getAddress(), deadline, v, r, s);
+      .fillPublicOrderWithPermit(
+        await fundSwapOrderManager.tokenIdToOrderHash(0),
+        user2.getAddress(),
+        deadline,
+        v,
+        r,
+        s,
+      );
 
     const erc20User1BalanceAfter = await erc20Token.balanceOf(user1.getAddress());
     const erc20User2BalanceAfter = await erc20Token.balanceOf(user2.getAddress());
@@ -100,8 +110,13 @@ describe('Orders with permit', () => {
   });
 
   it('Should allow to fill by market with permit', async () => {
-    const { fundSwap, wmaticToken, usdcToken, fundSwapBatchExecutor } =
-      await loadFixture(prepareTestEnv);
+    const {
+      fundSwap,
+      fundSwapOrderManager,
+      wmaticToken,
+      usdcToken,
+      fundSwapBatchExecutor,
+    } = await loadFixture(prepareTestEnv);
     const [user1, user2] = await ethers.getSigners();
 
     const wmaticUser1BalanceBefore = await wmaticToken.balanceOf(user1.getAddress());
@@ -116,6 +131,7 @@ describe('Orders with permit', () => {
       makerBuyToken: usdcToken.getAddress(),
       makerBuyTokenAmount: ethers.parseUnits('1', 6),
       deadline: 0,
+      creationTimestamp: 0,
     });
     await fundSwap.createPublicOrder({
       makerSellToken: wmaticToken.getAddress(),
@@ -123,6 +139,7 @@ describe('Orders with permit', () => {
       makerBuyToken: usdcToken.getAddress(),
       makerBuyTokenAmount: ethers.parseUnits('2', 6),
       deadline: 0,
+      creationTimestamp: 0,
     });
 
     const deadline = MAX_UINT256;
@@ -136,12 +153,14 @@ describe('Orders with permit', () => {
     await fundSwapBatchExecutor.connect(user2).batchFillPublicOrdersWithEntryPermit(
       [
         {
-          orderId: 0,
+          orderHash: await fundSwapOrderManager.tokenIdToOrderHash(0),
           amountIn: ethers.parseUnits('1', 6),
+          minAmountOut: 0,
         },
         {
-          orderId: 1,
+          orderHash: await fundSwapOrderManager.tokenIdToOrderHash(1),
           amountIn: ethers.parseUnits('1', 6),
+          minAmountOut: 0,
         },
       ],
       ethers.parseUnits('2', 6),
@@ -184,6 +203,7 @@ describe('Orders with permit', () => {
       makerBuyToken: erc20Token.getAddress(),
       makerBuyTokenAmount: ethers.parseEther('1'),
       deadline: 0,
+      creationTimestamp: 0,
     });
 
     const deadline = MAX_UINT256;
@@ -196,8 +216,9 @@ describe('Orders with permit', () => {
 
     await fundSwap.connect(user2).fillPublicOrderPartiallyWithPermit(
       {
-        orderId: 0,
+        orderHash: await fundSwapOrderManager.tokenIdToOrderHash(0),
         amountIn: ethers.parseEther('0.5'),
+        minAmountOut: 0,
       },
       user2.getAddress(),
       deadline,
@@ -207,7 +228,9 @@ describe('Orders with permit', () => {
     );
 
     expect(await fundSwapOrderManager.totalSupply()).to.be.equal(1);
-    const order = await fundSwapOrderManager.getOrder(0);
+    const order = await fundSwapOrderManager.getOrder(
+      await fundSwapOrderManager.tokenIdToOrderHash(0),
+    );
     expect(order.makerSellTokenAmount).to.be.equal(ethers.parseEther('0.5'));
     expect(order.makerBuyTokenAmount).to.be.equal(ethers.parseEther('0.5'));
   });

@@ -39,7 +39,35 @@ const deployMocks: DeployFunction = async function ({
   }
 
   const mockUSDC = await ethers.getContractAt('MockUSDC', mockUSDCDeployment.address);
-  await mockUSDC.mint(deployer, ethers.parseEther('100000'));
+  if ((await mockUSDC.balanceOf(deployer)) === 0n) {
+    await (
+      await mockUSDC.mint(deployer, ethers.parseUnits('100000', 6))
+    ).wait(networkConfig.confirmations);
+  }
+
+  const faucet = await deploy('TestnetERC20Faucet', {
+    from: deployer,
+    args: [mockERC20Deployment.address, mockUSDCDeployment.address],
+    waitConfirmations: networkConfig.confirmations,
+    log: true,
+  });
+  if (networkConfig.shouldVerifyContracts) {
+    await verifyContract(faucet.address, faucet.args!);
+  }
+
+  const minterRole = await mockUSDC.MINTER_ROLE();
+  if (!(await mockUSDC.hasRole(minterRole, faucet.address))) {
+    await (
+      await mockUSDC.grantRole(minterRole, faucet.address)
+    ).wait(networkConfig.confirmations);
+  }
+
+  const mockERC20 = await ethers.getContractAt('MockERC20', mockERC20Deployment.address);
+  if (!(await mockERC20.hasRole(minterRole, faucet.address))) {
+    await (
+      await mockERC20.grantRole(minterRole, faucet.address)
+    ).wait(networkConfig.confirmations);
+  }
 
   log('-----Mocks deployed-----');
 };

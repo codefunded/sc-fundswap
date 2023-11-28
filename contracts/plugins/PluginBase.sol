@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.21;
+pragma solidity 0.8.23;
 
 import { PublicOrder } from '../OrderStructs.sol';
 
@@ -19,7 +19,7 @@ struct PluginCallsConfig {
  * @notice interface for a FundSwap plugin. It allows to specify a custom logic to run when a significant event
  * occurs during the FundSwap contract lifecycle, i.e. order creation, order fill and order cancellation.
  */
-abstract contract IPlugin {
+abstract contract PluginBase {
   /**
    * @notice allows to run a custom logic when enabling the plugin. It is a noop if not overriden in a plugin.
    * @param data custom data that is in form of bytes so it can be abi decoded to a custom format

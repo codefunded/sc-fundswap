@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.21;
+pragma solidity 0.8.23;
 
 import '../OrderStructs.sol';
-import '../plugins/IPlugin.sol';
+import '../plugins/PluginBase.sol';
 import '@openzeppelin/contracts/utils/structs/EnumerableSet.sol';
 
 /**
@@ -24,6 +24,8 @@ struct PluginsToRun {
 library PluginLib {
   using EnumerableSet for EnumerableSet.AddressSet;
 
+  error PluginLib__TokenAddressChangeNotAllowed();
+
   /**
    * @notice Stores the plugin call config so it is easy to query when performing transactions
    * @param pluginsToRun storage variable to write to
@@ -31,7 +33,7 @@ library PluginLib {
    */
   function storePluginCallConfig(
     PluginsToRun storage pluginsToRun,
-    IPlugin plugin
+    PluginBase plugin
   ) internal {
     PluginCallsConfig memory pluginCallsConfig = plugin.getCallsConfig();
     if (pluginCallsConfig.beforeOrderCreation) {
@@ -61,7 +63,7 @@ library PluginLib {
    */
   function removePluginCallConfig(
     PluginsToRun storage pluginsToRun,
-    IPlugin plugin
+    PluginBase plugin
   ) internal {
     PluginCallsConfig memory pluginCallsConfig = plugin.getCallsConfig();
     if (pluginCallsConfig.beforeOrderCreation) {
@@ -85,6 +87,27 @@ library PluginLib {
   }
 
   /**
+   * @notice Checks if plugins performed any changes to the order that are not allowed.
+   * @param initialMakerSellToken initial maker sell token address from a given order
+   * @param initialMakerBuyToken initial maker buy token address from a given order
+   * @param finalMakerSellToken final maker sell token address after order has been modified by a plugin
+   * @param finalMakerBuyToken final maker buy token address after order has been modified by a plugin
+   */
+  function _checkPluginChanges(
+    address initialMakerSellToken,
+    address initialMakerBuyToken,
+    address finalMakerSellToken,
+    address finalMakerBuyToken
+  ) private pure {
+    if (
+      initialMakerSellToken != finalMakerSellToken ||
+      initialMakerBuyToken != finalMakerBuyToken
+    ) {
+      revert PluginLib__TokenAddressChangeNotAllowed();
+    }
+  }
+
+  /**
    * @notice Calls all plugins that have a `beforeOrderCreation` hook enabled. Result of a hook
    * is passed to the next hook in a line.
    * @param pluginsToRun config of plugins to run
@@ -94,10 +117,21 @@ library PluginLib {
     PluginsToRun storage pluginsToRun,
     PublicOrder memory order
   ) internal returns (PublicOrder memory result) {
+    (address initalMakerSellToken, address initialMakerBuyToken) = (
+      order.makerSellToken,
+      order.makerBuyToken
+    );
     result = order;
-    for (uint i = 0; i < pluginsToRun.beforeOrderCreation.length(); i++) {
-      result = IPlugin(pluginsToRun.beforeOrderCreation.at(i)).beforeOrderCreation(
+    uint256 amountOfPlugins = pluginsToRun.beforeOrderCreation.length();
+    for (uint i = 0; i < amountOfPlugins; ++i) {
+      result = PluginBase(pluginsToRun.beforeOrderCreation.at(i)).beforeOrderCreation(
         result
+      );
+      _checkPluginChanges(
+        initalMakerSellToken,
+        initialMakerBuyToken,
+        result.makerSellToken,
+        result.makerBuyToken
       );
     }
   }
@@ -112,9 +146,22 @@ library PluginLib {
     PluginsToRun storage pluginsToRun,
     PublicOrder memory order
   ) internal returns (PublicOrder memory result) {
+    (address initalMakerSellToken, address initialMakerBuyToken) = (
+      order.makerSellToken,
+      order.makerBuyToken
+    );
     result = order;
-    for (uint i = 0; i < pluginsToRun.afterOrderCreation.length(); i++) {
-      result = IPlugin(pluginsToRun.afterOrderCreation.at(i)).afterOrderCreation(result);
+    uint256 amountOfPlugins = pluginsToRun.afterOrderCreation.length();
+    for (uint i = 0; i < amountOfPlugins; ++i) {
+      result = PluginBase(pluginsToRun.afterOrderCreation.at(i)).afterOrderCreation(
+        result
+      );
+      _checkPluginChanges(
+        initalMakerSellToken,
+        initialMakerBuyToken,
+        result.makerSellToken,
+        result.makerBuyToken
+      );
     }
   }
 
@@ -128,9 +175,20 @@ library PluginLib {
     PluginsToRun storage pluginsToRun,
     PublicOrder memory order
   ) internal returns (PublicOrder memory result) {
+    (address initalMakerSellToken, address initialMakerBuyToken) = (
+      order.makerSellToken,
+      order.makerBuyToken
+    );
     result = order;
-    for (uint i = 0; i < pluginsToRun.beforeOrderFill.length(); i++) {
-      result = IPlugin(pluginsToRun.beforeOrderFill.at(i)).beforeOrderFill(result);
+    uint256 amountOfPlugins = pluginsToRun.beforeOrderFill.length();
+    for (uint i = 0; i < amountOfPlugins; ++i) {
+      result = PluginBase(pluginsToRun.beforeOrderFill.at(i)).beforeOrderFill(result);
+      _checkPluginChanges(
+        initalMakerSellToken,
+        initialMakerBuyToken,
+        result.makerSellToken,
+        result.makerBuyToken
+      );
     }
   }
 
@@ -144,9 +202,20 @@ library PluginLib {
     PluginsToRun storage pluginsToRun,
     PublicOrder memory order
   ) internal returns (PublicOrder memory result) {
+    (address initalMakerSellToken, address initialMakerBuyToken) = (
+      order.makerSellToken,
+      order.makerBuyToken
+    );
     result = order;
-    for (uint i = 0; i < pluginsToRun.afterOrderFill.length(); i++) {
-      result = IPlugin(pluginsToRun.afterOrderFill.at(i)).afterOrderFill(result);
+    uint256 amountOfPlugins = pluginsToRun.afterOrderFill.length();
+    for (uint i = 0; i < amountOfPlugins; ++i) {
+      result = PluginBase(pluginsToRun.afterOrderFill.at(i)).afterOrderFill(result);
+      _checkPluginChanges(
+        initalMakerSellToken,
+        initialMakerBuyToken,
+        result.makerSellToken,
+        result.makerBuyToken
+      );
     }
   }
 
@@ -160,9 +229,20 @@ library PluginLib {
     PluginsToRun storage pluginsToRun,
     PublicOrder memory order
   ) internal returns (PublicOrder memory result) {
+    (address initalMakerSellToken, address initialMakerBuyToken) = (
+      order.makerSellToken,
+      order.makerBuyToken
+    );
     result = order;
-    for (uint i = 0; i < pluginsToRun.beforeOrderCancel.length(); i++) {
-      result = IPlugin(pluginsToRun.beforeOrderCancel.at(i)).beforeOrderCancel(result);
+    uint256 amountOfPlugins = pluginsToRun.beforeOrderCancel.length();
+    for (uint i = 0; i < amountOfPlugins; ++i) {
+      result = PluginBase(pluginsToRun.beforeOrderCancel.at(i)).beforeOrderCancel(result);
+      _checkPluginChanges(
+        initalMakerSellToken,
+        initialMakerBuyToken,
+        result.makerSellToken,
+        result.makerBuyToken
+      );
     }
   }
 
@@ -176,9 +256,20 @@ library PluginLib {
     PluginsToRun storage pluginsToRun,
     PublicOrder memory order
   ) internal returns (PublicOrder memory result) {
+    (address initalMakerSellToken, address initialMakerBuyToken) = (
+      order.makerSellToken,
+      order.makerBuyToken
+    );
     result = order;
-    for (uint i = 0; i < pluginsToRun.afterOrderCancel.length(); i++) {
-      result = IPlugin(pluginsToRun.afterOrderCancel.at(i)).afterOrderCancel(result);
+    uint256 amountOfPlugins = pluginsToRun.afterOrderCancel.length();
+    for (uint i = 0; i < amountOfPlugins; ++i) {
+      result = PluginBase(pluginsToRun.afterOrderCancel.at(i)).afterOrderCancel(result);
+      _checkPluginChanges(
+        initalMakerSellToken,
+        initialMakerBuyToken,
+        result.makerSellToken,
+        result.makerBuyToken
+      );
     }
   }
 }

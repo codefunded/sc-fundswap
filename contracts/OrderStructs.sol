@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.21;
+pragma solidity 0.8.23;
 
 /**
  * @notice Holds the data for a private order. Private order means that it is not stored on chain. The maker can pass the
@@ -33,6 +33,8 @@ struct PrivateOrder {
  * @param makerSellTokenAmount the amount of the token being sold by the maker
  * @param makerBuyTokenAmount the amount of the token that maker wants to receive
  * @param deadline the deadline of the order. Can be 0 if order should not expire
+ * @param creationTimestamp the timestamp when the order was created. It is used to differentiate orders with the same
+ * parameters (functions as a nonce)
  */
 struct PublicOrder {
   address makerSellToken;
@@ -40,17 +42,20 @@ struct PublicOrder {
   uint256 makerSellTokenAmount;
   uint256 makerBuyTokenAmount;
   uint256 deadline;
+  uint256 creationTimestamp;
 }
 
 /**
  * @notice Helper struct that is used to represent a market order request. It describes a request
  * of a user to spend a certain amount of tokens.
- * @param orderId the id of the order to fill
+ * @param orderHash the hash of the order to fill
  * @param amountIn the amount of tokens to spend
+ * @param minAmountOut the minimum amount of tokens that should be received from the swap
  */
 struct OrderFillRequest {
-  uint256 orderId;
+  bytes32 orderHash;
   uint256 amountIn;
+  uint256 minAmountOut;
 }
 
 /**

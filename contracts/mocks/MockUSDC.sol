@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.21;
+pragma solidity 0.8.23;
 
-import '@openzeppelin/contracts/token/ERC20/ERC20.sol';
-import '@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol';
-import '@openzeppelin/contracts/access/AccessControl.sol';
-import '@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol';
+import { ERC20 } from '@openzeppelin/contracts/token/ERC20/ERC20.sol';
+import { ERC20Burnable } from '@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol';
+import { AccessControl } from '@openzeppelin/contracts/access/AccessControl.sol';
+import { ERC20Permit } from '@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol';
 
 /// @title Mock USDC ERC20 mintable token for testing purposes
 contract MockUSDC is ERC20, ERC20Burnable, AccessControl, ERC20Permit {

@@ -48,6 +48,7 @@ describe('TokenWhitelistPlugin', () => {
         makerBuyToken: wmaticToken.getAddress(),
         makerBuyTokenAmount: ethers.parseEther('1'),
         deadline: 0,
+        creationTimestamp: 0,
       }),
     ).to.be.revertedWithCustomError(
       tokenWhitelistPlugin,
@@ -61,6 +62,7 @@ describe('TokenWhitelistPlugin', () => {
         makerBuyToken: erc20Token.getAddress(),
         makerBuyTokenAmount: ethers.parseEther('1'),
         deadline: 0,
+        creationTimestamp: 0,
       }),
     ).to.be.revertedWithCustomError(
       tokenWhitelistPlugin,
@@ -69,8 +71,13 @@ describe('TokenWhitelistPlugin', () => {
   });
 
   it('should not allow to fill a public order with tokens that are not whitelisted', async () => {
-    const { fundSwap, tokenWhitelistPlugin, erc20Token, wmaticToken } =
-      await loadFixture(prepareTestEnv);
+    const {
+      fundSwap,
+      fundSwapOrderManager,
+      tokenWhitelistPlugin,
+      erc20Token,
+      wmaticToken,
+    } = await loadFixture(prepareTestEnv);
     const [, user2] = await ethers.getSigners();
 
     await erc20Token.approve(fundSwap.getAddress(), ethers.parseEther('1'));
@@ -80,12 +87,18 @@ describe('TokenWhitelistPlugin', () => {
       deadline: 0,
       makerSellToken: erc20Token.getAddress(),
       makerBuyToken: wmaticToken.getAddress(),
+      creationTimestamp: 0,
     });
 
     await tokenWhitelistPlugin.removeTokenFromWhitelist(erc20Token.getAddress());
 
     await expect(
-      fundSwap.connect(user2).fillPublicOrder(0, user2.getAddress()),
+      fundSwap
+        .connect(user2)
+        .fillPublicOrder(
+          await fundSwapOrderManager.tokenIdToOrderHash(0),
+          user2.getAddress(),
+        ),
     ).to.be.revertedWithCustomError(
       tokenWhitelistPlugin,
       'TokenWhitelistPlugin__TokenNotWhitelisted',
@@ -125,8 +138,13 @@ describe('TokenWhitelistPlugin', () => {
   });
 
   it('should allow to cancel a public order even when tokens are no longer on the whitelist', async () => {
-    const { fundSwap, tokenWhitelistPlugin, erc20Token, wmaticToken } =
-      await loadFixture(prepareTestEnv);
+    const {
+      fundSwap,
+      fundSwapOrderManager,
+      tokenWhitelistPlugin,
+      erc20Token,
+      wmaticToken,
+    } = await loadFixture(prepareTestEnv);
 
     await erc20Token.approve(fundSwap.getAddress(), ethers.parseEther('1'));
     await fundSwap.createPublicOrder({
@@ -135,10 +153,11 @@ describe('TokenWhitelistPlugin', () => {
       deadline: 0,
       makerSellToken: erc20Token.getAddress(),
       makerBuyToken: wmaticToken.getAddress(),
+      creationTimestamp: 0,
     });
 
     await tokenWhitelistPlugin.removeTokenFromWhitelist(erc20Token.getAddress());
 
-    await fundSwap.cancelOrder(0);
+    await fundSwap.cancelOrder(await fundSwapOrderManager.tokenIdToOrderHash(0));
   });
 });

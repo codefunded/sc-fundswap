@@ -1,18 +1,16 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.21;
+pragma solidity 0.8.23;
 
-import './IPlugin.sol';
-import '@openzeppelin/contracts/access/Ownable.sol';
-import '@openzeppelin/contracts/token/ERC20/IERC20.sol';
-import '@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol';
-import '@openzeppelin/contracts/utils/structs/EnumerableMap.sol';
-import '@openzeppelin/contracts/utils/structs/EnumerableSet.sol';
-import '@openzeppelin/contracts/utils/math/Math.sol';
-import '../libraries/PairLib.sol';
-
-error FeeAggregator__FeeCannotExceed100Percent();
-error FeeAggregator__FeeAmountIsBiggerThanAmount();
-error FeeAggregator__NoBaseFeeAmountForPair();
+import { PluginBase, PluginCallsConfig } from './PluginBase.sol';
+import { Ownable2Step, Ownable } from '@openzeppelin/contracts/access/Ownable2Step.sol';
+import { IERC20 } from '@openzeppelin/contracts/token/ERC20/IERC20.sol';
+import { SafeERC20 } from '@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol';
+import { EnumerableMap } from '@openzeppelin/contracts/utils/structs/EnumerableMap.sol';
+import { EnumerableSet } from '@openzeppelin/contracts/utils/structs/EnumerableSet.sol';
+import { Math } from '@openzeppelin/contracts/utils/math/Math.sol';
+import { Pausable } from '@openzeppelin/contracts/utils/Pausable.sol';
+import { PairLib } from '../libraries/PairLib.sol';
+import { PublicOrder } from '../OrderStructs.sol';
 
 /**
  * @notice FeeLevel is a struct that contains a fee percentage and a minimum amount of asset
@@ -43,31 +41,32 @@ struct PairFeeLevels {
  * nor for a given asset.
  * @dev Fee percentage is denominated in basis points (1/100th of a percent).
  */
-contract FeeAggregatorPlugin is IPlugin, Ownable {
+contract FeeAggregatorPlugin is PluginBase, Ownable2Step, Pausable {
   using SafeERC20 for IERC20;
   using EnumerableMap for EnumerableMap.AddressToUintMap;
   using EnumerableSet for EnumerableSet.AddressSet;
+
+  error FeeAggregator__FeeCannotExceedMaxAmount();
+  error FeeAggregator__FeeAmountIsBiggerThanAmount();
+  error FeeAggregator__NoBaseFeeAmountForPair();
+  error FeeAggregator__FeeLevelsAreNotInAscendingOrder();
 
   event DefaultFeeUpdated(uint16 newfee, uint16 previousFee);
   event FeeForAssetUpdated(address indexed asset, uint16 newfee, uint16 previousFee);
   event FeesWithdrawn(address token, uint256 amount);
   event FeeLevelsForPairUpdated(address indexed assetA, address indexed assetB);
 
-  /// @dev MAX_FEE is 100% in basis points
-  uint16 public constant MAX_FEE = 10000;
+  /// @dev fee cannot exceed 100%
+  uint16 public constant BASIS_POINTS_MAX = 10000;
+  /// @dev MAX_FEE allowed is 3% in basis points
+  uint16 public constant MAX_FEE = 300;
   /// @notice Default fee for each asset. It is used when no fee is specified for a given asset
   uint16 public defaultFee;
   /// @notice Fee that is specific to a given asset. It overrides the default fee.
   EnumerableMap.AddressToUintMap private feeForAsset;
-  /**
-   * @notice Fees that are specific to a given pair of assets. It overrides the default fee
-   * and a fee that is set for a particular asset.
-   */
+  /// @notice Fees that are specific to a given pair of assets. It overrides the default fee
+  /// and a fee that is set for a particular asset.
   mapping(address => mapping(address => FeeLevel[])) public feeForPair;
-  /// @notice List of pairs for each asset
-  mapping(address => EnumerableSet.AddressSet) private pairsForAsset;
-  /// @notice List of all assets that have a specified fee for at least one pair
-  EnumerableSet.AddressSet private assetsWithPairFee;
 
   constructor(uint16 _defaultFee) Ownable(_msgSender()) {
     defaultFee = _defaultFee;
@@ -95,6 +94,10 @@ contract FeeAggregatorPlugin is IPlugin, Ownable {
   function beforeOrderFill(
     PublicOrder memory order
   ) external view override returns (PublicOrder memory) {
+    if (paused()) {
+      return order;
+    }
+
     uint256 feeAmount = _calculateFeeAmount(
       order.makerSellToken,
       order.makerBuyToken,
@@ -115,7 +118,7 @@ contract FeeAggregatorPlugin is IPlugin, Ownable {
    */
   function setDefaultFee(uint16 fee) external onlyOwner {
     if (fee > MAX_FEE) {
-      revert FeeAggregator__FeeCannotExceed100Percent();
+      revert FeeAggregator__FeeCannotExceedMaxAmount();
     }
     defaultFee = fee;
     emit DefaultFeeUpdated(fee, defaultFee);
@@ -128,7 +131,7 @@ contract FeeAggregatorPlugin is IPlugin, Ownable {
    */
   function setFeeForAsset(address asset, uint16 fee) external onlyOwner {
     if (fee > MAX_FEE) {
-      revert FeeAggregator__FeeCannotExceed100Percent();
+      revert FeeAggregator__FeeCannotExceedMaxAmount();
     }
     feeForAsset.set(asset, fee);
     emit FeeForAssetUpdated(asset, fee, defaultFee);
@@ -147,16 +150,11 @@ contract FeeAggregatorPlugin is IPlugin, Ownable {
   ) external onlyOwner {
     (address asset1, address asset2) = PairLib.getPairInOrder(_asset1, _asset2);
 
-    if (feeLevels.length == 0) {
+    uint256 amountOfFeeLevels = feeLevels.length;
+
+    // remove fee levels for a given pair if feeLevels array is empty
+    if (amountOfFeeLevels == 0) {
       feeForPair[asset1][asset2] = new FeeLevel[](0);
-      pairsForAsset[asset1].remove(asset2);
-      if (pairsForAsset[asset1].length() == 0) {
-        assetsWithPairFee.remove(asset1);
-      }
-      pairsForAsset[asset2].remove(asset1);
-      if (pairsForAsset[asset2].length() == 0) {
-        assetsWithPairFee.remove(asset2);
-      }
       emit FeeLevelsForPairUpdated(asset1, asset2);
       return;
     }
@@ -165,17 +163,18 @@ contract FeeAggregatorPlugin is IPlugin, Ownable {
       revert FeeAggregator__NoBaseFeeAmountForPair();
     }
 
-    for (uint256 i = 0; i < feeLevels.length; i++) {
+    for (uint256 i = 0; i < amountOfFeeLevels; ++i) {
       if (feeLevels[i].fee > MAX_FEE) {
-        revert FeeAggregator__FeeCannotExceed100Percent();
+        revert FeeAggregator__FeeCannotExceedMaxAmount();
+      }
+      if (i > 0) {
+        if (feeLevels[i].minAmount <= feeLevels[i - 1].minAmount) {
+          revert FeeAggregator__FeeLevelsAreNotInAscendingOrder();
+        }
       }
     }
 
     feeForPair[asset1][asset2] = feeLevels;
-    pairsForAsset[asset1].add(asset2);
-    pairsForAsset[asset2].add(asset1);
-    assetsWithPairFee.add(asset1);
-    assetsWithPairFee.add(asset2);
     emit FeeLevelsForPairUpdated(asset1, asset2);
   }
 
@@ -186,28 +185,14 @@ contract FeeAggregatorPlugin is IPlugin, Ownable {
    * @return fee for a given asset
    */
   function getFeeForAsset(address asset) public view returns (uint16) {
+    if (paused()) {
+      return 0;
+    }
+
     if (feeForAsset.contains(asset)) {
       return uint16(feeForAsset.get(asset));
     }
     return defaultFee;
-  }
-
-  /**
-   * @notice Returns all assets that have a specific fee assigned to them. Default fee is not included.
-   * @return assets that have a specific fee assigned to them
-   * @return fees fee amount for each asset
-   */
-  function getFeesForAllAssets()
-    external
-    view
-    returns (address[] memory assets, uint256[] memory fees)
-  {
-    uint256 length = feeForAsset.length();
-    assets = new address[](length);
-    fees = new uint256[](length);
-    for (uint256 i = 0; i < length; i++) {
-      (assets[i], fees[i]) = feeForAsset.at(i);
-    }
   }
 
   /**
@@ -221,49 +206,11 @@ contract FeeAggregatorPlugin is IPlugin, Ownable {
     address _asset1,
     address _asset2
   ) public view returns (FeeLevel[] memory feeLevels) {
+    if (paused()) {
+      return new FeeLevel[](0);
+    }
     (address asset1, address asset2) = PairLib.getPairInOrder(_asset1, _asset2);
     return feeForPair[asset1][asset2];
-  }
-
-  /**
-   * @notice Returns all pairs that have a specific fee assigned to them. Default fee is not included.
-   * @return pairsWithFees pairs that have a specific fee assigned to them
-   */
-  function getFeeLevelsForAllPairs()
-    external
-    view
-    returns (PairFeeLevels[] memory pairsWithFees)
-  {
-    if (assetsWithPairFee.length() == 0) {
-      return new PairFeeLevels[](0);
-    }
-
-    PairFeeLevels[] memory tempPairsWithFees = new PairFeeLevels[](
-      PairLib.getMaxAmountOfPairs(assetsWithPairFee.length())
-    );
-    uint256 tempPairsIndex = 0;
-
-    for (uint256 i = 0; i < assetsWithPairFee.length(); i++) {
-      address asset1 = assetsWithPairFee.at(i);
-      for (uint256 j = 0; j < pairsForAsset[asset1].length(); j++) {
-        address asset2 = pairsForAsset[asset1].at(j);
-        (address sortedAsset1, ) = PairLib.getPairInOrder(asset1, asset2);
-        FeeLevel[] memory pairFeeLevels = feeForPair[sortedAsset1][asset2];
-        if (sortedAsset1 == asset1 && pairFeeLevels.length > 0) {
-          tempPairsWithFees[tempPairsIndex] = PairFeeLevels({
-            asset1: asset1,
-            asset2: asset2,
-            feeLevels: pairFeeLevels
-          });
-          tempPairsIndex++;
-        }
-      }
-    }
-
-    pairsWithFees = new PairFeeLevels[](tempPairsIndex);
-    for (uint256 i = 0; i < tempPairsIndex; i++) {
-      pairsWithFees[i] = tempPairsWithFees[i];
-    }
   }
 
   /**
@@ -285,15 +232,19 @@ contract FeeAggregatorPlugin is IPlugin, Ownable {
       secondAsset
     );
     FeeLevel[] memory feeLevels = feeForPair[asset1][asset2];
-    if (feeLevels.length != 0) {
-      uint256 lowestFee = feeLevels[0].fee;
+    uint256 amountOfFeeLevels = feeLevels.length;
+
+    if (amountOfFeeLevels != 0) {
+      uint16 lowestFee = feeLevels[0].fee;
       // Iterate through the feeLevels array and find the appropriate fee level based on the amount
-      for (uint256 i = 0; i < feeLevels.length; i++) {
-        if (amount >= feeLevels[i].minAmount && feeLevels[i].fee < lowestFee) {
-          lowestFee = feeLevels[i].fee;
+      for (uint256 i = 0; i < amountOfFeeLevels; ++i) {
+        if (amount >= feeLevels[i].minAmount) {
+          if (feeLevels[i].fee < lowestFee) {
+            lowestFee = feeLevels[i].fee;
+          }
         }
       }
-      fee = uint16(lowestFee);
+      fee = lowestFee;
     } else {
       // if there's no fee for a given pair, check if there's a fee for a given asset
       // if there's no fee for a given asset, getFeeForAsset returns the default fee
@@ -304,9 +255,23 @@ contract FeeAggregatorPlugin is IPlugin, Ownable {
       return 0;
     }
 
-    feeAmount = (amount * fee) / MAX_FEE;
+    feeAmount = (amount * fee) / BASIS_POINTS_MAX;
     if (feeAmount > amount) {
       revert FeeAggregator__FeeAmountIsBiggerThanAmount();
     }
+  }
+
+  /**
+   * @notice Allows the owner to temporarily pause collecting fees.
+   */
+  function pauseCollectingFees() external onlyOwner {
+    _pause();
+  }
+
+  /**
+   * @notice Allows the owner to unpause collecting fees.
+   */
+  function unpauseCollectingFees() external onlyOwner {
+    _unpause();
   }
 }
