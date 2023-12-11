@@ -50,20 +50,23 @@ describe('Router', () => {
     });
   });
 
-  it('router should return an empty path when there are no orders for given pair', async () => {
+  it('router should throw an error when there are no orders for given pair', async () => {
     const { erc20Token, wmaticToken } = await loadFixture(prepareTestEnv);
 
-    const path = createTradeRoute(
-      {
-        type: 'EXACT_INPUT',
-        destinationToken: await erc20Token.getAddress(),
-        sourceToken: await wmaticToken.getAddress(),
-        sourceAmount: ethers.parseEther('2'),
-      },
-      [],
-    );
+    const sourceToken = await wmaticToken.getAddress();
+    const destinationToken = await erc20Token.getAddress();
 
-    expect(path.map((step) => step.orderHash)).to.be.deep.equal([]);
+    expect(() =>
+      createTradeRoute(
+        {
+          type: 'EXACT_INPUT',
+          sourceToken,
+          destinationToken,
+          sourceAmount: ethers.parseEther('2'),
+        },
+        [],
+      ),
+    ).to.throw('Not enough liquidity to fill the request');
   });
 
   it('router should route through the best path when exact input is specified', async () => {
@@ -113,7 +116,7 @@ describe('Router', () => {
       },
       orders.map((order) => ({ ...order, id: hashPublicOrder(order) })),
     );
-    expect(pathSingle.map((step) => step.orderHash)).to.be.deep.equal([
+    expect(pathSingle.route.map((step) => step.orderHash)).to.be.deep.equal([
       hashPublicOrder(orders[2]),
     ]);
 
@@ -126,7 +129,7 @@ describe('Router', () => {
       },
       orders.map((order) => ({ ...order, id: hashPublicOrder(order) })),
     );
-    expect(pathTwo.map((step) => step.orderHash)).to.be.deep.equal([
+    expect(pathTwo.route.map((step) => step.orderHash)).to.be.deep.equal([
       hashPublicOrder(orders[2]),
       hashPublicOrder(orders[0]),
     ]);
@@ -141,7 +144,7 @@ describe('Router', () => {
       orders.map((order) => ({ ...order, id: hashPublicOrder(order) })),
     );
 
-    expect(pathTriple.map((step) => step.orderHash)).to.be.deep.equal([
+    expect(pathTriple.route.map((step) => step.orderHash)).to.be.deep.equal([
       hashPublicOrder(orders[2]),
       hashPublicOrder(orders[0]),
       hashPublicOrder(orders[1]),
@@ -195,7 +198,7 @@ describe('Router', () => {
       },
       orders.map((order) => ({ ...order, id: hashPublicOrder(order) })),
     );
-    expect(pathSingle.map((step) => step.orderHash)).to.be.deep.equal([
+    expect(pathSingle.route.map((step) => step.orderHash)).to.be.deep.equal([
       hashPublicOrder(orders[2]),
     ]);
 
@@ -208,7 +211,7 @@ describe('Router', () => {
       },
       orders.map((order) => ({ ...order, id: hashPublicOrder(order) })),
     );
-    expect(pathTwo.map((step) => step.orderHash)).to.be.deep.equal([
+    expect(pathTwo.route.map((step) => step.orderHash)).to.be.deep.equal([
       hashPublicOrder(orders[2]),
       hashPublicOrder(orders[0]),
     ]);
@@ -222,7 +225,7 @@ describe('Router', () => {
       },
       orders.map((order) => ({ ...order, id: hashPublicOrder(order) })),
     );
-    expect(pathTriple.map((step) => step.orderHash)).to.be.deep.equal([
+    expect(pathTriple.route.map((step) => step.orderHash)).to.be.deep.equal([
       hashPublicOrder(orders[2]),
       hashPublicOrder(orders[0]),
       hashPublicOrder(orders[1]),

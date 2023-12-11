@@ -335,11 +335,13 @@ contract FundSwap is IFundSwapEvents, IFundSwapErrors, AccessControl, Reentrancy
       order.makerSellTokenAmount
     );
 
+    uint256 tokenId = orderManager.orderHashTotokenId(orderHash);
+
     orderManager.burn(orderHash);
 
     emit PublicOrderFilled(
       orderHash,
-      orderManager.orderHashTotokenId(orderHash),
+      tokenId,
       order.makerSellToken,
       order.makerBuyToken,
       orderOwner,

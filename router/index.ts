@@ -47,13 +47,16 @@ type BigNumberify<T> = {
 interface Path {
   route: BigNumberify<OrderFillRequestStruct>[];
   amountRemainingToFill: bigint;
+  inputAmount: bigint;
+  outputAmount: bigint;
 }
 
-const mapOrderToExactInputFillRequest = (
-  order: PublicOrder,
+const createFillRequest = (
+  orderHash: BytesLike,
+  amountIn: bigint,
 ): BigNumberify<OrderFillRequestStruct> => ({
-  orderHash: order.id,
-  amountIn: order.makerSellTokenAmount,
+  orderHash: orderHash,
+  amountIn,
   minAmountOut: 0n, // TODO: add actual value of minAmountOut
 });
 
@@ -68,64 +71,68 @@ const mapOrderToExactInputFillRequest = (
 export const createTradeRoute = (
   fillRequest: FillRequest,
   orders: readonly PublicOrder[],
+  currentTimestamp = BigInt(Date.now()) / 1000n,
 ) => {
+  const { sourceToken, destinationToken } = fillRequest;
+  const ordersForPair = [...orders]
+    .filter(
+      (order) =>
+        order.makerSellToken === destinationToken && order.makerBuyToken === sourceToken,
+    )
+    .filter((order) => (order.deadline === 0n ? true : order.deadline > currentTimestamp))
+    .sort(sortOrdersByPrice);
+  if (ordersForPair.length === 0) {
+    throw new NotEnoughLiquidity();
+  }
+
   if (fillRequest.type === 'EXACT_INPUT') {
-    const { sourceToken, destinationToken, sourceAmount } = fillRequest;
-    const ordersForPair = [...orders]
-      .filter(
-        (order) =>
-          order.makerSellToken === destinationToken &&
-          order.makerBuyToken === sourceToken,
-      )
-      .sort(sortOrdersByPrice);
-    if (ordersForPair.length === 0) {
-      return [];
-    }
+    const { sourceAmount } = fillRequest;
 
     const path = ordersForPair.reduce<Path>(
       (acc, order) => {
-        if (acc.amountRemainingToFill === 0n) {
+        if (acc.amountRemainingToFill === 0n || acc.amountRemainingToFill < 0n) {
           return acc;
         }
 
         if (acc.amountRemainingToFill < order.makerBuyTokenAmount) {
-          const partialOrder = mapOrderToExactInputFillRequest(order);
-          partialOrder.amountIn = acc.amountRemainingToFill;
+          const partialOrder = createFillRequest(order.id, acc.amountRemainingToFill);
           return {
             route: [...acc.route, partialOrder],
             amountRemainingToFill: 0n,
+            inputAmount: acc.inputAmount,
+            outputAmount:
+              acc.outputAmount +
+              (acc.amountRemainingToFill * order.makerSellTokenAmount) /
+                order.makerBuyTokenAmount,
           };
         }
 
         return {
-          route: [...acc.route, mapOrderToExactInputFillRequest(order)],
+          route: [...acc.route, createFillRequest(order.id, order.makerBuyTokenAmount)],
           amountRemainingToFill: acc.amountRemainingToFill - order.makerBuyTokenAmount,
+          inputAmount: acc.inputAmount,
+          outputAmount: acc.outputAmount + order.makerSellTokenAmount,
         };
       },
       {
         route: [],
         amountRemainingToFill: sourceAmount,
+        inputAmount: sourceAmount,
+        outputAmount: 0n,
       },
     );
 
     if (path.amountRemainingToFill > 0) {
-      throw new Error('Not enough liquidity to fill the request');
+      throw new NotEnoughLiquidity();
     }
 
-    return path.route;
+    return {
+      route: path.route,
+      inputAmount: path.inputAmount,
+      outputAmount: path.outputAmount,
+    };
   } else {
-    const { sourceToken, destinationToken, destinationAmount } = fillRequest;
-
-    const ordersForPair = [...orders]
-      .filter(
-        (order) =>
-          order.makerSellToken === destinationToken &&
-          order.makerBuyToken === sourceToken,
-      )
-      .sort(sortOrdersByPrice);
-    if (ordersForPair.length === 0) {
-      return [];
-    }
+    const { destinationAmount } = fillRequest;
 
     const path = ordersForPair.reduce<Path>(
       (acc, order) => {
@@ -133,30 +140,50 @@ export const createTradeRoute = (
           return acc;
         }
 
-        if (acc.amountRemainingToFill < order.makerSellTokenAmount) {
-          const partialOrder = mapOrderToExactInputFillRequest(order);
-          partialOrder.amountIn = acc.amountRemainingToFill;
+        if (order.makerSellTokenAmount > acc.amountRemainingToFill) {
+          const partialOrder = createFillRequest(order.id, acc.amountRemainingToFill);
+          const percentageOfFill =
+            (Number(acc.amountRemainingToFill) / Number(order.makerSellTokenAmount)) *
+            1e18;
           return {
             route: [...acc.route, partialOrder],
             amountRemainingToFill: 0n,
+            inputAmount:
+              acc.inputAmount +
+              (order.makerBuyTokenAmount * BigInt(percentageOfFill)) / BigInt(1e18),
+            outputAmount: acc.outputAmount,
           };
         }
 
         return {
-          route: [...acc.route, mapOrderToExactInputFillRequest(order)],
+          route: [...acc.route, createFillRequest(order.id, order.makerBuyTokenAmount)],
           amountRemainingToFill: acc.amountRemainingToFill - order.makerSellTokenAmount,
+          inputAmount: acc.inputAmount + order.makerBuyTokenAmount,
+          outputAmount: acc.outputAmount,
         };
       },
       {
         route: [],
         amountRemainingToFill: destinationAmount,
+        inputAmount: 0n,
+        outputAmount: destinationAmount,
       },
     );
 
     if (path.amountRemainingToFill > 0) {
-      throw new Error('Not enough liquidity to fill the request');
+      throw new NotEnoughLiquidity();
     }
 
-    return path.route;
+    return {
+      route: path.route,
+      inputAmount: path.inputAmount,
+      outputAmount: path.outputAmount,
+    };
   }
 };
+
+class NotEnoughLiquidity extends Error {
+  constructor() {
+    super('Not enough liquidity to fill the request');
+  }
+}

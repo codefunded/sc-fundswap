@@ -78,7 +78,7 @@ const deployMockOffers: DeployFunction = async function ({ deployments, getChain
         makerSellToken: mockERC20Address,
         makerSellTokenAmount: ethers.parseEther('10'),
         makerBuyToken: mockUSDCAddress,
-        makerBuyTokenAmount: ethers.parseUnits('15', 6),
+        makerBuyTokenAmount: ethers.parseUnits('25', 6),
         deadline: 0,
         creationTimestamp: Math.floor(Date.now() + 1 / 1000),
       })
