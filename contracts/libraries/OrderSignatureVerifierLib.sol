@@ -50,6 +50,7 @@ library OrderSignatureVerifierLib {
     return
       keccak256(
         abi.encodePacked(
+          'FundSwapV1',
           _getChainId(),
           order.maker,
           order.deadline,

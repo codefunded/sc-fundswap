@@ -8,6 +8,7 @@ export function hashOrder(
   return ethers.keccak256(
     ethers.solidityPacked(
       [
+        'string',
         'uint256',
         'address',
         'uint256',
@@ -19,6 +20,7 @@ export function hashOrder(
         'uint256',
       ],
       [
+        'FundSwapV1',
         chainId,
         order.maker,
         order.deadline,
