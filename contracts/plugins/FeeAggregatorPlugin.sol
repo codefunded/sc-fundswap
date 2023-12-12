@@ -168,7 +168,10 @@ contract FeeAggregatorPlugin is PluginBase, Ownable2Step, Pausable {
         revert FeeAggregator__FeeCannotExceedMaxAmount();
       }
       if (i > 0) {
-        if (feeLevels[i].minAmount <= feeLevels[i - 1].minAmount) {
+        if (
+          feeLevels[i].minAmount <= feeLevels[i - 1].minAmount ||
+          feeLevels[i].fee >= feeLevels[i - 1].fee
+        ) {
           revert FeeAggregator__FeeLevelsAreNotInAscendingOrder();
         }
       }
@@ -238,11 +241,10 @@ contract FeeAggregatorPlugin is PluginBase, Ownable2Step, Pausable {
       uint16 lowestFee = feeLevels[0].fee;
       // Iterate through the feeLevels array and find the appropriate fee level based on the amount
       for (uint256 i = 0; i < amountOfFeeLevels; ++i) {
-        if (amount >= feeLevels[i].minAmount) {
-          if (feeLevels[i].fee < lowestFee) {
-            lowestFee = feeLevels[i].fee;
-          }
+        if (feeLevels[i].minAmount > amount) {
+          break;
         }
+        lowestFee = feeLevels[i].fee;
       }
       fee = lowestFee;
     } else {
