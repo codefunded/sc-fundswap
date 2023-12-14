@@ -20,9 +20,8 @@ describe('FundSwapOrderManager', () => {
     const orderHash = await fundSwap.getPublicOrderHash(order);
     await fundSwap.createPublicOrder(order);
 
-    const tokenId = await fundSwapOrderManager.orderHashTotokenId(orderHash);
-    expect(tokenId).to.equal(0);
-    const tokenURI = await fundSwapOrderManager.tokenURI(0);
+    const tokenId = await fundSwapOrderManager.orderHashToTokenId(orderHash);
+    const tokenURI = await fundSwapOrderManager.tokenURI(tokenId);
     // remove base64 encoding
     const decodedTokenURI = Buffer.from(tokenURI.split(',')[1], 'base64').toString(
       'ascii',

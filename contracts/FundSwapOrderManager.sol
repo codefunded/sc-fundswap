@@ -19,14 +19,12 @@ contract FundSwapOrderManager is ERC721, ERC721Enumerable, ERC721Burnable, Ownab
   error FundSwapOrderManager_OrderNotFound(bytes32 tokenHash);
   error FundSwapOrderManager__OrderAlreadyExists(bytes32 tokenHash);
 
-  uint256 public tokenIdCounter;
-
   /// @dev tokenHash => order data
   mapping(bytes32 => PublicOrder) public orders;
   /// @dev tokenId => tokenHash
   mapping(uint256 => bytes32) public tokenIdToOrderHash;
   /// @dev tokenHash => tokenId
-  mapping(bytes32 => uint256) public orderHashTotokenId;
+  mapping(bytes32 => uint256) public orderHashToTokenId;
 
   constructor() ERC721('FundSwap order', 'FSO') Ownable(_msgSender()) {}
 
@@ -51,7 +49,7 @@ contract FundSwapOrderManager is ERC721, ERC721Enumerable, ERC721Burnable, Ownab
    * @param tokenHash the has of the token to get the order data for
    */
   function ownerOfByHash(bytes32 tokenHash) public view returns (address) {
-    return ownerOf(orderHashTotokenId[tokenHash]);
+    return ownerOf(orderHashToTokenId[tokenHash]);
   }
 
   /**
@@ -64,14 +62,14 @@ contract FundSwapOrderManager is ERC721, ERC721Enumerable, ERC721Burnable, Ownab
     address to,
     PublicOrder calldata order
   ) public onlyOwner returns (uint256 tokenId) {
-    tokenId = tokenIdCounter++;
     bytes32 tokenHash = OrderSignatureVerifierLib.hashPublicOrder(order);
+    tokenId = uint256(tokenHash);
     if (_doesOrderExists(tokenHash)) {
       revert FundSwapOrderManager__OrderAlreadyExists(tokenHash);
     }
     orders[tokenHash] = order;
     tokenIdToOrderHash[tokenId] = tokenHash;
-    orderHashTotokenId[tokenHash] = tokenId;
+    orderHashToTokenId[tokenHash] = tokenId;
     _safeMint(to, tokenId);
   }
 
@@ -81,9 +79,9 @@ contract FundSwapOrderManager is ERC721, ERC721Enumerable, ERC721Burnable, Ownab
    */
   function burn(bytes32 tokenHash) public onlyOwner {
     delete orders[tokenHash];
-    uint256 tokenId = orderHashTotokenId[tokenHash];
+    uint256 tokenId = orderHashToTokenId[tokenHash];
     tokenIdToOrderHash[tokenId] = bytes32(0);
-    orderHashTotokenId[tokenHash] = 0;
+    orderHashToTokenId[tokenHash] = 0;
     super._burn(tokenId);
   }
 

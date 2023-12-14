@@ -41,14 +41,21 @@ describe('BatchExecutor', () => {
       .connect(user2)
       .approve(fundSwapBatchExecutor.getAddress(), ethers.parseEther('1.5'));
 
+    const firstOrderHash = await fundSwapOrderManager.tokenIdToOrderHash(
+      await fundSwapOrderManager.tokenByIndex(0),
+    );
+    const secondOrderHash = await fundSwapOrderManager.tokenIdToOrderHash(
+      await fundSwapOrderManager.tokenByIndex(1),
+    );
+
     await fundSwapBatchExecutor.connect(user2).batchFillPublicOrders([
       {
-        orderHash: await fundSwapOrderManager.tokenIdToOrderHash(0),
+        orderHash: firstOrderHash,
         amountIn: ethers.parseEther('1'),
         minAmountOut: 0,
       },
       {
-        orderHash: await fundSwapOrderManager.tokenIdToOrderHash(1),
+        orderHash: secondOrderHash,
         amountIn: ethers.parseEther('0.5'),
         minAmountOut: 0,
       },
@@ -74,9 +81,7 @@ describe('BatchExecutor', () => {
     );
 
     expect(await fundSwapOrderManager.totalSupply()).to.be.equal(1);
-    const remainingOrder = await fundSwapOrderManager.getOrder(
-      await fundSwapOrderManager.tokenIdToOrderHash(1),
-    );
+    const remainingOrder = await fundSwapOrderManager.getOrder(secondOrderHash);
     expect(remainingOrder.makerSellTokenAmount).to.be.equal(ethers.parseEther('1.75'));
     expect(remainingOrder.makerBuyTokenAmount).to.be.equal(ethers.parseEther('3.5'));
   });
@@ -118,14 +123,21 @@ describe('BatchExecutor', () => {
       .connect(user2)
       .approve(fundSwapBatchExecutor.getAddress(), ethers.parseUnits('150', 6));
 
+    const firstOrderHash = await fundSwapOrderManager.tokenIdToOrderHash(
+      await fundSwapOrderManager.tokenByIndex(0),
+    );
+    const secondOrderHash = await fundSwapOrderManager.tokenIdToOrderHash(
+      await fundSwapOrderManager.tokenByIndex(1),
+    );
+
     await fundSwapBatchExecutor.connect(user2).batchFillPublicOrders([
       {
-        orderHash: await fundSwapOrderManager.tokenIdToOrderHash(0),
+        orderHash: firstOrderHash,
         amountIn: ethers.parseUnits('100', 6),
         minAmountOut: 0,
       },
       {
-        orderHash: await fundSwapOrderManager.tokenIdToOrderHash(1),
+        orderHash: secondOrderHash,
         amountIn: ethers.parseUnits('50', 6),
         minAmountOut: 0,
       },
@@ -152,9 +164,7 @@ describe('BatchExecutor', () => {
     );
 
     expect(await fundSwapOrderManager.totalSupply()).to.be.equal(1);
-    const remainingOrder = await fundSwapOrderManager.getOrder(
-      await fundSwapOrderManager.tokenIdToOrderHash(1),
-    );
+    const remainingOrder = await fundSwapOrderManager.getOrder(secondOrderHash);
     expect(remainingOrder.makerSellTokenAmount).to.be.equal(ethers.parseEther('1.75'));
     expect(remainingOrder.makerBuyTokenAmount).to.be.equal(ethers.parseUnits('350', 6));
   });
@@ -179,22 +189,24 @@ describe('BatchExecutor', () => {
       creationTimestamp: 0,
     });
 
+    const firstOrderHash = await fundSwapOrderManager.tokenIdToOrderHash(
+      await fundSwapOrderManager.tokenByIndex(0),
+    );
+
     await wmaticToken
       .connect(user2)
       .approve(fundSwapBatchExecutor.getAddress(), ethers.parseEther('1'));
 
     await fundSwapBatchExecutor.connect(user2).batchFillPublicOrders([
       {
-        orderHash: await fundSwapOrderManager.tokenIdToOrderHash(0),
+        orderHash: firstOrderHash,
         amountIn: ethers.parseEther('0.5'),
         minAmountOut: 0,
       },
     ]);
 
     expect(await fundSwapOrderManager.totalSupply()).to.be.equal(1);
-    const order = await fundSwapOrderManager.getOrder(
-      await fundSwapOrderManager.tokenIdToOrderHash(0),
-    );
+    const order = await fundSwapOrderManager.getOrder(firstOrderHash);
     expect(order.makerSellTokenAmount).to.be.equal(ethers.parseEther('0.5'));
     expect(order.makerBuyTokenAmount).to.be.equal(ethers.parseEther('0.5'));
   });
@@ -223,18 +235,20 @@ describe('BatchExecutor', () => {
       .connect(user2)
       .approve(fundSwapBatchExecutor.getAddress(), ethers.parseUnits('100', 6));
 
+    const firstOrderHash = await fundSwapOrderManager.tokenIdToOrderHash(
+      await fundSwapOrderManager.tokenByIndex(0),
+    );
+
     await fundSwapBatchExecutor.connect(user2).batchFillPublicOrders([
       {
-        orderHash: await fundSwapOrderManager.tokenIdToOrderHash(0),
+        orderHash: firstOrderHash,
         amountIn: ethers.parseUnits('50', 6),
         minAmountOut: 0,
       },
     ]);
 
     expect(await fundSwapOrderManager.totalSupply()).to.be.equal(1);
-    const order = await fundSwapOrderManager.getOrder(
-      await fundSwapOrderManager.tokenIdToOrderHash(0),
-    );
+    const order = await fundSwapOrderManager.getOrder(firstOrderHash);
     expect(order.makerSellTokenAmount).to.be.equal(ethers.parseEther('0.5'));
     expect(order.makerBuyTokenAmount).to.be.equal(ethers.parseUnits('50', 6));
   });
@@ -263,18 +277,20 @@ describe('BatchExecutor', () => {
       .connect(user2)
       .approve(fundSwapBatchExecutor.getAddress(), ethers.parseEther('0.5'));
 
+    const firstOrderHash = await fundSwapOrderManager.tokenIdToOrderHash(
+      await fundSwapOrderManager.tokenByIndex(0),
+    );
+
     await fundSwapBatchExecutor.connect(user2).batchFillPublicOrders([
       {
-        orderHash: await fundSwapOrderManager.tokenIdToOrderHash(0),
+        orderHash: firstOrderHash,
         amountIn: ethers.parseEther('0.5'),
         minAmountOut: 0,
       },
     ]);
 
     expect(await fundSwapOrderManager.totalSupply()).to.be.equal(1);
-    const order = await fundSwapOrderManager.getOrder(
-      await fundSwapOrderManager.tokenIdToOrderHash(0),
-    );
+    const order = await fundSwapOrderManager.getOrder(firstOrderHash);
     expect(order.makerSellTokenAmount).to.be.equal(ethers.parseUnits('100', 6));
     expect(order.makerBuyTokenAmount).to.be.equal(ethers.parseEther('0.5'));
     expect(await usdcToken.balanceOf(fundSwap.getAddress())).to.be.equal(
@@ -306,18 +322,20 @@ describe('BatchExecutor', () => {
       .connect(user2)
       .approve(fundSwapBatchExecutor.getAddress(), ethers.parseEther('0.5'));
 
+    const firstOrderHash = await fundSwapOrderManager.tokenIdToOrderHash(
+      await fundSwapOrderManager.tokenByIndex(0),
+    );
+
     await fundSwapBatchExecutor.connect(user2).batchFillPublicOrders([
       {
-        orderHash: await fundSwapOrderManager.tokenIdToOrderHash(0),
+        orderHash: firstOrderHash,
         amountIn: ethers.parseEther('0.5'),
         minAmountOut: 0,
       },
     ]);
 
     expect(await fundSwapOrderManager.totalSupply()).to.be.equal(1);
-    const order = await fundSwapOrderManager.getOrder(
-      await fundSwapOrderManager.tokenIdToOrderHash(0),
-    );
+    const order = await fundSwapOrderManager.getOrder(firstOrderHash);
     expect(order.makerSellTokenAmount).to.be.equal(
       ethers.parseEther('0.803571428571428572'),
     );
@@ -385,9 +403,19 @@ describe('BatchExecutor', () => {
       creationTimestamp: 0,
     });
 
+    const firstOrderHash = await fundSwapOrderManager.tokenIdToOrderHash(
+      await fundSwapOrderManager.tokenByIndex(0),
+    );
+
     const [user1, user2] = await ethers.getSigners();
-    await fundSwapOrderManager.transferFrom(user1.getAddress(), user2.getAddress(), 0);
-    expect(await fundSwapOrderManager.ownerOf(0)).to.be.equal(await user2.getAddress());
+    await fundSwapOrderManager.transferFrom(
+      user1.getAddress(),
+      user2.getAddress(),
+      firstOrderHash,
+    );
+    expect(await fundSwapOrderManager.ownerOf(firstOrderHash)).to.be.equal(
+      await user2.getAddress(),
+    );
 
     const wmaticBalanceOfFirstUserBefore = await wmaticToken.balanceOf(
       user1.getAddress(),
@@ -401,7 +429,7 @@ describe('BatchExecutor', () => {
       .approve(fundSwapBatchExecutor.getAddress(), ethers.parseEther('1'));
     await fundSwapBatchExecutor.connect(user2).batchFillPublicOrders([
       {
-        orderHash: await fundSwapOrderManager.tokenIdToOrderHash(0),
+        orderHash: firstOrderHash,
         amountIn: ethers.parseEther('1'),
         minAmountOut: 0,
       },
@@ -451,25 +479,32 @@ describe('BatchExecutor', () => {
     const usdcMakerBalanceBefore = await usdcToken.balanceOf(maker.getAddress());
     const usdcTakerBalanceBefore = await usdcToken.balanceOf(taker.getAddress());
 
+    const firstOrderHash = await fundSwapOrderManager.tokenIdToOrderHash(
+      await fundSwapOrderManager.tokenByIndex(0),
+    );
+    const secondOrderHash = await fundSwapOrderManager.tokenIdToOrderHash(
+      await fundSwapOrderManager.tokenByIndex(1),
+    );
+
     await usdcToken
       .connect(taker)
       .approve(fundSwapBatchExecutor.getAddress(), ethers.parseUnits('100', 6));
 
     await fundSwapBatchExecutor.connect(taker).batchFillPublicOrdersInSequence([
       {
-        orderHash: await fundSwapOrderManager.tokenIdToOrderHash(0),
+        orderHash: firstOrderHash,
         amountIn: ethers.parseUnits('100', 6),
         minAmountOut: 0,
       },
       {
-        orderHash: await fundSwapOrderManager.tokenIdToOrderHash(1),
+        orderHash: secondOrderHash,
         // 100 usdc input should give 1 erc20 token output but we apply 0.24% fee
         amountIn: ethers.parseEther('0.9976'),
         minAmountOut: 0,
       },
     ]);
 
-    await fundSwap.cancelOrder(await fundSwapOrderManager.tokenIdToOrderHash(1));
+    await fundSwap.cancelOrder(secondOrderHash);
 
     const erc20MakerBalanceAfter = await erc20Token.balanceOf(maker.getAddress());
     const erc20TakerBalanceAfter = await erc20Token.balanceOf(taker.getAddress());
@@ -544,14 +579,21 @@ describe('BatchExecutor', () => {
       .connect(taker)
       .approve(fundSwapBatchExecutor.getAddress(), ethers.parseUnits('100', 6));
 
+    const firstOrderHash = await fundSwapOrderManager.tokenIdToOrderHash(
+      await fundSwapOrderManager.tokenByIndex(0),
+    );
+    const secondOrderHash = await fundSwapOrderManager.tokenIdToOrderHash(
+      await fundSwapOrderManager.tokenByIndex(1),
+    );
+
     await fundSwapBatchExecutor.connect(taker).batchFillPublicOrdersInSequence([
       {
-        orderHash: await fundSwapOrderManager.tokenIdToOrderHash(0),
+        orderHash: firstOrderHash,
         amountIn: ethers.parseUnits('100', 6),
         minAmountOut: 0,
       },
       {
-        orderHash: await fundSwapOrderManager.tokenIdToOrderHash(1),
+        orderHash: secondOrderHash,
         // 100 usdc input should give 1 erc20 token output but we apply 0.24% fee (so result is 0.9976)
         // and simulate a scenario when the result of a previous swap in sequence is not fully used
         // as an input for the next swap. 0.9976 - 0.5 = 0.4976 is left on the contract balance
@@ -631,6 +673,10 @@ describe('BatchExecutor', () => {
       creationTimestamp: 0,
     });
 
+    const firstOrderHash = await fundSwapOrderManager.tokenIdToOrderHash(
+      await fundSwapOrderManager.tokenByIndex(0),
+    );
+
     await erc20Token
       .connect(user2)
       .approve(fundSwapBatchExecutor.getAddress(), ethers.parseEther('0.5'));
@@ -639,7 +685,7 @@ describe('BatchExecutor', () => {
     await expect(
       fundSwapBatchExecutor.connect(user2).batchFillPublicOrders([
         {
-          orderHash: await fundSwapOrderManager.tokenIdToOrderHash(0),
+          orderHash: firstOrderHash,
           amountIn: ethers.parseEther('0.5'),
           minAmountOut: ethers.parseUnits('100', 6),
         },
@@ -653,7 +699,7 @@ describe('BatchExecutor', () => {
     await expect(
       fundSwapBatchExecutor.connect(user2).batchFillPublicOrders([
         {
-          orderHash: await fundSwapOrderManager.tokenIdToOrderHash(0),
+          orderHash: firstOrderHash,
           amountIn: ethers.parseEther('0.5'),
           minAmountOut: ethers.parseUnits('99.76', 6),
         },

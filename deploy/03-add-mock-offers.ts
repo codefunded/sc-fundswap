@@ -52,7 +52,7 @@ const deployMockOffers: DeployFunction = async function ({ deployments, getChain
     'FundSwapOrderManager',
     await fundswap.orderManager(),
   );
-  if ((await orderManager.tokenIdCounter()) === 0n) {
+  if ((await orderManager.totalSupply()) === 0n) {
     await (
       await fundswap.createPublicOrder({
         makerSellToken: mockUSDCAddress,

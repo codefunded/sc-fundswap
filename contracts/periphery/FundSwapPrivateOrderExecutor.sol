@@ -210,10 +210,10 @@ contract FundSwapPrivateOrderExecutor is
     );
 
     // make order on behalf of the maker
-    bytes32 orderId = fundswap.createPublicOrder(order);
+    bytes32 newOrderHash = fundswap.createPublicOrder(order);
 
     // fill the order and send tokens to the taker
-    result = fundswap.fillPublicOrder(orderId, _msgSender());
+    result = fundswap.fillPublicOrder(newOrderHash, _msgSender());
 
     // send tokens received from an order fill to the initial maker
     IERC20(privateOrder.makerBuyToken).safeTransfer(

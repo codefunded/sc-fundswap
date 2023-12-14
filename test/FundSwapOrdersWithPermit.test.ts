@@ -65,6 +65,9 @@ describe('Orders with permit', () => {
       deadline: 0,
       creationTimestamp: 0,
     });
+    const firstOrderHash = await fundSwapOrderManager.tokenIdToOrderHash(
+      await fundSwapOrderManager.tokenByIndex(0),
+    );
 
     const deadline = MAX_UINT256;
     const { v, r, s } = await getPermitSignature(
@@ -76,14 +79,7 @@ describe('Orders with permit', () => {
 
     await fundSwap
       .connect(user2)
-      .fillPublicOrderWithPermit(
-        await fundSwapOrderManager.tokenIdToOrderHash(0),
-        user2.getAddress(),
-        deadline,
-        v,
-        r,
-        s,
-      );
+      .fillPublicOrderWithPermit(firstOrderHash, user2.getAddress(), deadline, v, r, s);
 
     const erc20User1BalanceAfter = await erc20Token.balanceOf(user1.getAddress());
     const erc20User2BalanceAfter = await erc20Token.balanceOf(user2.getAddress());
@@ -142,6 +138,13 @@ describe('Orders with permit', () => {
       creationTimestamp: 0,
     });
 
+    const firstOrderHash = await fundSwapOrderManager.tokenIdToOrderHash(
+      await fundSwapOrderManager.tokenByIndex(0),
+    );
+    const secondOrderHash = await fundSwapOrderManager.tokenIdToOrderHash(
+      await fundSwapOrderManager.tokenByIndex(1),
+    );
+
     const deadline = MAX_UINT256;
     const { v, r, s } = await getPermitSignature(
       user2,
@@ -153,12 +156,12 @@ describe('Orders with permit', () => {
     await fundSwapBatchExecutor.connect(user2).batchFillPublicOrdersWithEntryPermit(
       [
         {
-          orderHash: await fundSwapOrderManager.tokenIdToOrderHash(0),
+          orderHash: firstOrderHash,
           amountIn: ethers.parseUnits('1', 6),
           minAmountOut: 0,
         },
         {
-          orderHash: await fundSwapOrderManager.tokenIdToOrderHash(1),
+          orderHash: secondOrderHash,
           amountIn: ethers.parseUnits('1', 6),
           minAmountOut: 0,
         },
@@ -205,6 +208,9 @@ describe('Orders with permit', () => {
       deadline: 0,
       creationTimestamp: 0,
     });
+    const firstOrderHash = await fundSwapOrderManager.tokenIdToOrderHash(
+      await fundSwapOrderManager.tokenByIndex(0),
+    );
 
     const deadline = MAX_UINT256;
     const { v, r, s } = await getPermitSignature(
@@ -216,7 +222,7 @@ describe('Orders with permit', () => {
 
     await fundSwap.connect(user2).fillPublicOrderPartiallyWithPermit(
       {
-        orderHash: await fundSwapOrderManager.tokenIdToOrderHash(0),
+        orderHash: firstOrderHash,
         amountIn: ethers.parseEther('0.5'),
         minAmountOut: 0,
       },
@@ -228,9 +234,7 @@ describe('Orders with permit', () => {
     );
 
     expect(await fundSwapOrderManager.totalSupply()).to.be.equal(1);
-    const order = await fundSwapOrderManager.getOrder(
-      await fundSwapOrderManager.tokenIdToOrderHash(0),
-    );
+    const order = await fundSwapOrderManager.getOrder(firstOrderHash);
     expect(order.makerSellTokenAmount).to.be.equal(ethers.parseEther('0.5'));
     expect(order.makerBuyTokenAmount).to.be.equal(ethers.parseEther('0.5'));
   });

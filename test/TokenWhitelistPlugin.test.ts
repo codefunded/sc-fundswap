@@ -90,15 +90,14 @@ describe('TokenWhitelistPlugin', () => {
       creationTimestamp: 0,
     });
 
+    const firstOrderHash = await fundSwapOrderManager.tokenIdToOrderHash(
+      await fundSwapOrderManager.tokenByIndex(0),
+    );
+
     await tokenWhitelistPlugin.removeTokenFromWhitelist(erc20Token.getAddress());
 
     await expect(
-      fundSwap
-        .connect(user2)
-        .fillPublicOrder(
-          await fundSwapOrderManager.tokenIdToOrderHash(0),
-          user2.getAddress(),
-        ),
+      fundSwap.connect(user2).fillPublicOrder(firstOrderHash, user2.getAddress()),
     ).to.be.revertedWithCustomError(
       tokenWhitelistPlugin,
       'TokenWhitelistPlugin__TokenNotWhitelisted',
@@ -155,9 +154,12 @@ describe('TokenWhitelistPlugin', () => {
       makerBuyToken: wmaticToken.getAddress(),
       creationTimestamp: 0,
     });
+    const firstOrderHash = await fundSwapOrderManager.tokenIdToOrderHash(
+      await fundSwapOrderManager.tokenByIndex(0),
+    );
 
     await tokenWhitelistPlugin.removeTokenFromWhitelist(erc20Token.getAddress());
 
-    await fundSwap.cancelOrder(await fundSwapOrderManager.tokenIdToOrderHash(0));
+    await fundSwap.cancelOrder(firstOrderHash);
   });
 });

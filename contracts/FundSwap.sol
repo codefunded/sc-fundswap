@@ -143,7 +143,7 @@ contract FundSwap is IFundSwapEvents, IFundSwapErrors, AccessControl, Reentrancy
    * @param v signature parameter
    * @param r signature parameter
    * @param s signature parameter
-   * @return orderId ID of the created order
+   * @return orderHash Hash of the created order
    */
   function createPublicOrderWithPermit(
     PublicOrder calldata order,
@@ -151,7 +151,7 @@ contract FundSwap is IFundSwapEvents, IFundSwapErrors, AccessControl, Reentrancy
     uint8 v,
     bytes32 r,
     bytes32 s
-  ) external returns (bytes32 orderId) {
+  ) external returns (bytes32 orderHash) {
     IERC20Permit(order.makerSellToken).permit(
       _msgSender(),
       address(this),
@@ -168,7 +168,7 @@ contract FundSwap is IFundSwapEvents, IFundSwapErrors, AccessControl, Reentrancy
    * @notice Creates a public order. The token that maker sells must be approved for transfer to
    * the exchange. Only whitelisted tokens can be used.
    * @param order public order data
-   * @return orderHash ID of the created order
+   * @return orderHash Hash of the created order
    */
   function createPublicOrder(
     PublicOrder memory order
@@ -203,7 +203,7 @@ contract FundSwap is IFundSwapEvents, IFundSwapErrors, AccessControl, Reentrancy
 
     emit PublicOrderCreated(
       orderHash,
-      orderManager.orderHashTotokenId(orderHash),
+      orderManager.orderHashToTokenId(orderHash),
       order.makerSellToken,
       order.makerBuyToken,
       order.makerSellTokenAmount,
@@ -233,7 +233,7 @@ contract FundSwap is IFundSwapEvents, IFundSwapErrors, AccessControl, Reentrancy
 
     emit PublicOrderCancelled(
       orderHash,
-      orderManager.orderHashTotokenId(orderHash),
+      orderManager.orderHashToTokenId(orderHash),
       order.makerSellToken,
       order.makerBuyToken,
       orderOwner
@@ -335,7 +335,7 @@ contract FundSwap is IFundSwapEvents, IFundSwapErrors, AccessControl, Reentrancy
       order.makerSellTokenAmount
     );
 
-    uint256 tokenId = orderManager.orderHashTotokenId(orderHash);
+    uint256 tokenId = orderManager.orderHashToTokenId(orderHash);
 
     orderManager.burn(orderHash);
 
@@ -432,7 +432,7 @@ contract FundSwap is IFundSwapEvents, IFundSwapErrors, AccessControl, Reentrancy
 
     emit PublicOrderPartiallyFilled(
       orderFillRequest.orderHash,
-      orderManager.orderHashTotokenId(orderFillRequest.orderHash),
+      orderManager.orderHashToTokenId(orderFillRequest.orderHash),
       _msgSender(),
       result.inputAmount,
       result.outputAmount,

@@ -55,9 +55,12 @@ describe('PublicOrders', () => {
       deadline: 0,
       creationTimestamp: 0,
     });
+    const firstOrderHash = await fundSwapOrderManager.tokenIdToOrderHash(
+      await fundSwapOrderManager.tokenByIndex(0),
+    );
     const balanceAfterOrderCreation = await erc20Token.balanceOf(user1.getAddress());
 
-    await fundSwap.cancelOrder(await fundSwapOrderManager.tokenIdToOrderHash(0));
+    await fundSwap.cancelOrder(firstOrderHash);
     const balanceAfterOrderCancellation = await erc20Token.balanceOf(user1.getAddress());
     expect(await fundSwapOrderManager.balanceOf(await user1.getAddress())).to.equal(0);
     expect(balanceBeforeOrderCreation).to.equal(balanceAfterOrderCancellation);
@@ -82,10 +85,14 @@ describe('PublicOrders', () => {
       deadline: 0,
       creationTimestamp: 0,
     });
+    const firstOrderHash = await fundSwapOrderManager.tokenIdToOrderHash(
+      await fundSwapOrderManager.tokenByIndex(0),
+    );
 
-    await expect(
-      fundSwap.cancelOrder(await fundSwapOrderManager.tokenIdToOrderHash(0)),
-    ).to.be.revertedWithCustomError(fundSwap, 'ReentrancyGuardReentrantCall');
+    await expect(fundSwap.cancelOrder(firstOrderHash)).to.be.revertedWithCustomError(
+      fundSwap,
+      'ReentrancyGuardReentrantCall',
+    );
   });
 
   it('Should allow to fill a particular public order', async () => {
@@ -108,15 +115,14 @@ describe('PublicOrders', () => {
       creationTimestamp: 0,
     });
 
+    const firstOrderHash = await fundSwapOrderManager.tokenIdToOrderHash(
+      await fundSwapOrderManager.tokenByIndex(0),
+    );
+
     await wmaticToken
       .connect(user2)
       .approve(fundSwap.getAddress(), ethers.parseEther('1'));
-    await fundSwap
-      .connect(user2)
-      .fillPublicOrder(
-        await fundSwapOrderManager.tokenIdToOrderHash(0),
-        user2.getAddress(),
-      );
+    await fundSwap.connect(user2).fillPublicOrder(firstOrderHash, user2.getAddress());
 
     const erc20User1BalanceAfter = await erc20Token.balanceOf(user1.getAddress());
     const erc20User2BalanceAfter = await erc20Token.balanceOf(user2.getAddress());
