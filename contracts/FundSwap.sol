@@ -203,7 +203,7 @@ contract FundSwap is IFundSwapEvents, IFundSwapErrors, AccessControl, Reentrancy
 
     emit PublicOrderCreated(
       orderHash,
-      orderManager.orderHashToTokenId(orderHash),
+      uint256(orderHash),
       order.makerSellToken,
       order.makerBuyToken,
       order.makerSellTokenAmount,
@@ -233,7 +233,7 @@ contract FundSwap is IFundSwapEvents, IFundSwapErrors, AccessControl, Reentrancy
 
     emit PublicOrderCancelled(
       orderHash,
-      orderManager.orderHashToTokenId(orderHash),
+      uint256(orderHash),
       order.makerSellToken,
       order.makerBuyToken,
       orderOwner
@@ -335,13 +335,11 @@ contract FundSwap is IFundSwapEvents, IFundSwapErrors, AccessControl, Reentrancy
       order.makerSellTokenAmount
     );
 
-    uint256 tokenId = orderManager.orderHashToTokenId(orderHash);
-
     orderManager.burn(orderHash);
 
     emit PublicOrderFilled(
       orderHash,
-      tokenId,
+      uint256(orderHash),
       order.makerSellToken,
       order.makerBuyToken,
       orderOwner,
@@ -432,7 +430,7 @@ contract FundSwap is IFundSwapEvents, IFundSwapErrors, AccessControl, Reentrancy
 
     emit PublicOrderPartiallyFilled(
       orderFillRequest.orderHash,
-      orderManager.orderHashToTokenId(orderFillRequest.orderHash),
+      uint256(orderFillRequest.orderHash),
       _msgSender(),
       result.inputAmount,
       result.outputAmount,

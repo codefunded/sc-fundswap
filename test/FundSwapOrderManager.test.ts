@@ -20,7 +20,7 @@ describe('FundSwapOrderManager', () => {
     const orderHash = await fundSwap.getPublicOrderHash(order);
     await fundSwap.createPublicOrder(order);
 
-    const tokenId = await fundSwapOrderManager.orderHashToTokenId(orderHash);
+    const tokenId = BigInt(orderHash);
     const tokenURI = await fundSwapOrderManager.tokenURI(tokenId);
     // remove base64 encoding
     const decodedTokenURI = Buffer.from(tokenURI.split(',')[1], 'base64').toString(
