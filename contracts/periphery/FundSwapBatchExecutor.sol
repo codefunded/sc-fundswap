@@ -46,7 +46,7 @@ contract FundSwapBatchExecutor is Context {
     bytes32 s
   ) public returns (SwapResult[] memory results) {
     PublicOrder memory order = fundswap.orderManager().getOrder(
-      orderFillRequests[0].orderHash
+      uint256(orderFillRequests[0].orderHash)
     );
     IERC20Permit(order.makerBuyToken).permit(
       _msgSender(),
@@ -76,7 +76,7 @@ contract FundSwapBatchExecutor is Context {
 
     for (uint256 i = 0; i < amountOfFillRequests; ++i) {
       PublicOrder memory order = fundswap.orderManager().getOrder(
-        orderFillRequests[i].orderHash
+        uint256(orderFillRequests[i].orderHash)
       );
       _collectTokensNeededForSwap(orderFillRequests[i], order);
       IERC20(order.makerBuyToken).approve(address(fundswap), type(uint256).max);
@@ -112,7 +112,7 @@ contract FundSwapBatchExecutor is Context {
     // All the subsequent swaps take tokens from the results of the previous swaps.
     for (uint256 i = 0; i < amountOfFillRequests; ++i) {
       PublicOrder memory order = fundswap.orderManager().getOrder(
-        orderFillRequests[i].orderHash
+        uint256(orderFillRequests[i].orderHash)
       );
 
       // Only tokens needed for the first swap in sequence have to be transfered to this contract

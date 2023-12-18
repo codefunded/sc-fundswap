@@ -16,38 +16,20 @@ import { OrderSignatureVerifierLib } from './libraries/OrderSignatureVerifierLib
  * @notice Manages the creation and storage of public orders which are represented as ERC721 tokens.
  */
 contract FundSwapOrderManager is ERC721, ERC721Enumerable, ERC721Burnable, Ownable {
-  error FundSwapOrderManager_OrderNotFound(bytes32 tokenHash);
-  error FundSwapOrderManager__OrderAlreadyExists(bytes32 tokenHash);
+  error FundSwapOrderManager_OrderNotFound(uint256 tokenId);
+  error FundSwapOrderManager__OrderAlreadyExists(uint256 tokenId);
 
   /// @dev tokenHash => order data
-  mapping(bytes32 => PublicOrder) public orders;
-  /// @dev tokenId => tokenHash
-  mapping(uint256 => bytes32) public tokenIdToOrderHash;
+  mapping(uint256 => PublicOrder) public orders;
 
   constructor() ERC721('FundSwap order', 'FSO') Ownable(_msgSender()) {}
-
-  /**
-   * gets the order data for a given token hash
-   * @param tokenHash the has of the token to get the order data for
-   */
-  function getOrder(bytes32 tokenHash) public view returns (PublicOrder memory) {
-    return orders[tokenHash];
-  }
 
   /**
    * gets the order data for a given token ID
    * @param tokenId the has of the token to get the order data for
    */
-  function getOrderById(uint256 tokenId) public view returns (PublicOrder memory) {
-    return orders[tokenIdToOrderHash[tokenId]];
-  }
-
-  /**
-   * gets the owner of an order with a given token hash
-   * @param tokenHash the has of the token to get the order data for
-   */
-  function ownerOfByHash(bytes32 tokenHash) public view returns (address) {
-    return ownerOf(uint256(tokenHash));
+  function getOrder(uint256 tokenId) public view returns (PublicOrder memory) {
+    return orders[tokenId];
   }
 
   /**
@@ -62,36 +44,33 @@ contract FundSwapOrderManager is ERC721, ERC721Enumerable, ERC721Burnable, Ownab
   ) public onlyOwner returns (uint256 tokenId) {
     bytes32 tokenHash = OrderSignatureVerifierLib.hashPublicOrder(order);
     tokenId = uint256(tokenHash);
-    if (_doesOrderExists(tokenHash)) {
-      revert FundSwapOrderManager__OrderAlreadyExists(tokenHash);
+    if (_doesOrderExists(tokenId)) {
+      revert FundSwapOrderManager__OrderAlreadyExists(tokenId);
     }
-    orders[tokenHash] = order;
-    tokenIdToOrderHash[tokenId] = tokenHash;
+    orders[tokenId] = order;
     _safeMint(to, tokenId);
   }
 
   /**
    * Burns an ERC721 token representing a public order and deletes the order data
-   * @param tokenHash the id of the token to burn
+   * @param tokenId the id of the token to burn
    */
-  function burn(bytes32 tokenHash) public onlyOwner {
-    delete orders[tokenHash];
-    uint256 tokenId = uint256(tokenHash);
-    tokenIdToOrderHash[tokenId] = bytes32(0);
+  function burn(uint256 tokenId) public override onlyOwner {
+    delete orders[tokenId];
     super._burn(tokenId);
   }
 
   /**
    * Updates the order data for a public order. It is used to update orders in case when anohter user issued a
    * market order that partially filled the given public order.
-   * @param tokenHash the id of the token to update
+   * @param tokenId the id of the token to update
    * @param order the new order data
    */
-  function updateOrder(bytes32 tokenHash, PublicOrder memory order) public onlyOwner {
-    if (!_doesOrderExists(tokenHash)) {
-      revert FundSwapOrderManager_OrderNotFound(tokenHash);
+  function updateOrder(uint256 tokenId, PublicOrder memory order) public onlyOwner {
+    if (!_doesOrderExists(tokenId)) {
+      revert FundSwapOrderManager_OrderNotFound(tokenId);
     }
-    orders[tokenHash] = order;
+    orders[tokenId] = order;
   }
 
   /**
@@ -101,7 +80,7 @@ contract FundSwapOrderManager is ERC721, ERC721Enumerable, ERC721Burnable, Ownab
   function tokenURI(uint256 tokenId) public view override returns (string memory) {
     super._requireOwned(tokenId);
 
-    PublicOrder memory order = orders[tokenIdToOrderHash[tokenId]];
+    PublicOrder memory order = orders[tokenId];
 
     string memory json = Base64.encode(
       bytes(
@@ -129,10 +108,10 @@ contract FundSwapOrderManager is ERC721, ERC721Enumerable, ERC721Burnable, Ownab
     return string(abi.encodePacked('data:application/json;base64,', json));
   }
 
-  function _doesOrderExists(bytes32 tokenHash) private view returns (bool) {
+  function _doesOrderExists(uint256 tokenId) private view returns (bool) {
     return
-      orders[tokenHash].makerBuyToken != address(0) &&
-      orders[tokenHash].makerSellToken != address(0);
+      orders[tokenId].makerBuyToken != address(0) &&
+      orders[tokenId].makerSellToken != address(0);
   }
 
   // following functions are overrides required by Solidity.

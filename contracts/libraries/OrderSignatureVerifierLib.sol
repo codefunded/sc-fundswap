@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.23;
 
-import '@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol';
-import '@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol';
-import '../OrderStructs.sol';
+import { MessageHashUtils } from '@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol';
+import { SignatureChecker } from '@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol';
+import { PublicOrder, PrivateOrder } from '../OrderStructs.sol';
 
 /**
  * @notice Verifies the signature of orders and hashes the order data in the way that

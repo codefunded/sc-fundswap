@@ -4,6 +4,7 @@ import { prepareTestEnv } from '../utils/testHelpers/fixtures/prepareTestEnv';
 import { getPermitSignature } from '../utils/testHelpers/permit';
 import { MAX_UINT256 } from '../utils/constants';
 import { expect } from 'chai';
+import { bigintToBytes } from '../utils/testHelpers/bigintToBytes';
 
 describe('Orders with permit', () => {
   it('Should allow to create a public order with permit', async () => {
@@ -36,8 +37,7 @@ describe('Orders with permit', () => {
     );
 
     const tokenId = await fundSwapOrderManager.tokenOfOwnerByIndex(user1.getAddress(), 0);
-    const orderHash = await fundSwapOrderManager.tokenIdToOrderHash(tokenId);
-    const order = await fundSwapOrderManager.getOrder(orderHash);
+    const order = await fundSwapOrderManager.getOrder(tokenId);
     expect(await fundSwapOrderManager.balanceOf(user1.getAddress())).to.equal(1);
     expect(order.makerSellToken).to.equal(await erc20Token.getAddress());
     expect(order.makerSellTokenAmount).to.equal(ethers.parseEther('1'));
@@ -65,9 +65,7 @@ describe('Orders with permit', () => {
       deadline: 0,
       creationTimestamp: 0,
     });
-    const firstOrderHash = await fundSwapOrderManager.tokenIdToOrderHash(
-      await fundSwapOrderManager.tokenByIndex(0),
-    );
+    const firstOrderHash = bigintToBytes(await fundSwapOrderManager.tokenByIndex(0));
 
     const deadline = MAX_UINT256;
     const { v, r, s } = await getPermitSignature(
@@ -138,12 +136,8 @@ describe('Orders with permit', () => {
       creationTimestamp: 0,
     });
 
-    const firstOrderHash = await fundSwapOrderManager.tokenIdToOrderHash(
-      await fundSwapOrderManager.tokenByIndex(0),
-    );
-    const secondOrderHash = await fundSwapOrderManager.tokenIdToOrderHash(
-      await fundSwapOrderManager.tokenByIndex(1),
-    );
+    const firstOrderHash = bigintToBytes(await fundSwapOrderManager.tokenByIndex(0));
+    const secondOrderHash = bigintToBytes(await fundSwapOrderManager.tokenByIndex(1));
 
     const deadline = MAX_UINT256;
     const { v, r, s } = await getPermitSignature(
@@ -208,9 +202,7 @@ describe('Orders with permit', () => {
       deadline: 0,
       creationTimestamp: 0,
     });
-    const firstOrderHash = await fundSwapOrderManager.tokenIdToOrderHash(
-      await fundSwapOrderManager.tokenByIndex(0),
-    );
+    const firstOrderHash = bigintToBytes(await fundSwapOrderManager.tokenByIndex(0));
 
     const deadline = MAX_UINT256;
     const { v, r, s } = await getPermitSignature(

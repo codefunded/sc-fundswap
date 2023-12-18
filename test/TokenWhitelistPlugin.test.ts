@@ -3,6 +3,7 @@ import { prepareTestEnv } from '../utils/testHelpers/fixtures/prepareTestEnv';
 import { expect } from 'chai';
 import { hashOrder } from '../utils/testHelpers/hashOrder';
 import { ethers } from 'hardhat';
+import { bigintToBytes } from '../utils/testHelpers/bigintToBytes';
 
 describe('TokenWhitelistPlugin', () => {
   it('owner should be allowed to whitelist a token', async () => {
@@ -90,9 +91,7 @@ describe('TokenWhitelistPlugin', () => {
       creationTimestamp: 0,
     });
 
-    const firstOrderHash = await fundSwapOrderManager.tokenIdToOrderHash(
-      await fundSwapOrderManager.tokenByIndex(0),
-    );
+    const firstOrderHash = bigintToBytes(await fundSwapOrderManager.tokenByIndex(0));
 
     await tokenWhitelistPlugin.removeTokenFromWhitelist(erc20Token.getAddress());
 
@@ -154,9 +153,7 @@ describe('TokenWhitelistPlugin', () => {
       makerBuyToken: wmaticToken.getAddress(),
       creationTimestamp: 0,
     });
-    const firstOrderHash = await fundSwapOrderManager.tokenIdToOrderHash(
-      await fundSwapOrderManager.tokenByIndex(0),
-    );
+    const firstOrderHash = bigintToBytes(await fundSwapOrderManager.tokenByIndex(0));
 
     await tokenWhitelistPlugin.removeTokenFromWhitelist(erc20Token.getAddress());
 

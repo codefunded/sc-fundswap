@@ -2,6 +2,7 @@ import { loadFixture } from '@nomicfoundation/hardhat-network-helpers';
 import { expect } from 'chai';
 import { ethers } from 'hardhat';
 import { prepareTestEnv } from '../utils/testHelpers/fixtures/prepareTestEnv';
+import { bigintToBytes } from '../utils/testHelpers/bigintToBytes';
 
 describe('PublicOrders', () => {
   it('Should deploy FundSwap and FundSwapOrderManager', async () => {
@@ -28,9 +29,7 @@ describe('PublicOrders', () => {
     });
 
     const tokenId = await fundSwapOrderManager.tokenOfOwnerByIndex(user1.getAddress(), 0);
-    const order = await fundSwapOrderManager.getOrder(
-      await fundSwapOrderManager.tokenIdToOrderHash(tokenId),
-    );
+    const order = await fundSwapOrderManager.getOrder(tokenId);
     expect(await fundSwapOrderManager.balanceOf(user1.getAddress())).to.equal(1);
     expect(order.makerSellToken).to.equal(await erc20Token.getAddress());
     expect(order.makerSellTokenAmount).to.equal(ethers.parseEther('1'));
@@ -55,9 +54,7 @@ describe('PublicOrders', () => {
       deadline: 0,
       creationTimestamp: 0,
     });
-    const firstOrderHash = await fundSwapOrderManager.tokenIdToOrderHash(
-      await fundSwapOrderManager.tokenByIndex(0),
-    );
+    const firstOrderHash = bigintToBytes(await fundSwapOrderManager.tokenByIndex(0));
     const balanceAfterOrderCreation = await erc20Token.balanceOf(user1.getAddress());
 
     await fundSwap.cancelOrder(firstOrderHash);
@@ -85,9 +82,7 @@ describe('PublicOrders', () => {
       deadline: 0,
       creationTimestamp: 0,
     });
-    const firstOrderHash = await fundSwapOrderManager.tokenIdToOrderHash(
-      await fundSwapOrderManager.tokenByIndex(0),
-    );
+    const firstOrderHash = bigintToBytes(await fundSwapOrderManager.tokenByIndex(0));
 
     await expect(fundSwap.cancelOrder(firstOrderHash)).to.be.revertedWithCustomError(
       fundSwap,
@@ -115,9 +110,7 @@ describe('PublicOrders', () => {
       creationTimestamp: 0,
     });
 
-    const firstOrderHash = await fundSwapOrderManager.tokenIdToOrderHash(
-      await fundSwapOrderManager.tokenByIndex(0),
-    );
+    const firstOrderHash = bigintToBytes(await fundSwapOrderManager.tokenByIndex(0));
 
     await wmaticToken
       .connect(user2)
@@ -168,7 +161,7 @@ describe('PublicOrders', () => {
     await expect(
       fundSwap.connect(user2).fillPublicOrderPartially(
         {
-          orderHash: await fundSwapOrderManager.tokenIdToOrderHash(0),
+          orderHash: bigintToBytes(await fundSwapOrderManager.tokenByIndex(0)),
           amountIn: ethers.parseEther('1'),
           minAmountOut: 0,
         },

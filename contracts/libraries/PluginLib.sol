@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.23;
 
-import '../OrderStructs.sol';
-import '../plugins/PluginBase.sol';
-import '@openzeppelin/contracts/utils/structs/EnumerableSet.sol';
+import { PublicOrder } from '../OrderStructs.sol';
+import { PluginBase, PluginCallsConfig } from '../plugins/PluginBase.sol';
+import { EnumerableSet } from '@openzeppelin/contracts/utils/structs/EnumerableSet.sol';
 
 /**
  * @notice Stores the addresses of plugins that should be called in certain moments

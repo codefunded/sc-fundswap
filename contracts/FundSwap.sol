@@ -222,8 +222,8 @@ contract FundSwap is IFundSwapEvents, IFundSwapErrors, AccessControl, Reentrancy
    * @param orderHash Hash of the order to fill
    */
   function cancelOrder(bytes32 orderHash) external nonReentrant {
-    PublicOrder memory order = orderManager.getOrder(orderHash);
-    address orderOwner = orderManager.ownerOfByHash(orderHash);
+    PublicOrder memory order = orderManager.getOrder(uint256(orderHash));
+    address orderOwner = orderManager.ownerOf(uint256(orderHash));
     if (orderOwner != _msgSender()) revert FundSwap__NotAnOwner();
 
     order = PluginLib.runBeforeOrderCancel(pluginCallConfigs, order);
@@ -239,7 +239,7 @@ contract FundSwap is IFundSwapEvents, IFundSwapErrors, AccessControl, Reentrancy
       orderOwner
     );
 
-    orderManager.burn(orderHash);
+    orderManager.burn(uint256(orderHash));
 
     order = PluginLib.runAfterOrderCancel(pluginCallConfigs, order);
   }
@@ -263,7 +263,7 @@ contract FundSwap is IFundSwapEvents, IFundSwapErrors, AccessControl, Reentrancy
     bytes32 r,
     bytes32 s
   ) external returns (SwapResult memory result) {
-    PublicOrder memory order = orderManager.getOrder(orderHash);
+    PublicOrder memory order = orderManager.getOrder(uint256(orderHash));
     IERC20Permit(order.makerBuyToken).permit(
       _msgSender(),
       address(this),
@@ -288,7 +288,7 @@ contract FundSwap is IFundSwapEvents, IFundSwapErrors, AccessControl, Reentrancy
     bytes32 orderHash,
     address tokenDestination
   ) public returns (SwapResult memory result) {
-    PublicOrder memory order = orderManager.getOrder(orderHash);
+    PublicOrder memory order = orderManager.getOrder(uint256(orderHash));
     return _fillPublicOrder(orderHash, order, tokenDestination);
   }
 
@@ -308,7 +308,7 @@ contract FundSwap is IFundSwapEvents, IFundSwapErrors, AccessControl, Reentrancy
       }
     }
 
-    address orderOwner = orderManager.ownerOfByHash(orderHash);
+    address orderOwner = orderManager.ownerOf(uint256(orderHash));
 
     tokenTreasury.subtract(order.makerSellToken, order.makerSellTokenAmount);
 
@@ -335,7 +335,7 @@ contract FundSwap is IFundSwapEvents, IFundSwapErrors, AccessControl, Reentrancy
       order.makerSellTokenAmount
     );
 
-    orderManager.burn(orderHash);
+    orderManager.burn(uint256(orderHash));
 
     emit PublicOrderFilled(
       orderHash,
@@ -368,7 +368,7 @@ contract FundSwap is IFundSwapEvents, IFundSwapErrors, AccessControl, Reentrancy
     bytes32 r,
     bytes32 s
   ) external returns (SwapResult memory result) {
-    PublicOrder memory order = orderManager.getOrder(orderFillRequest.orderHash);
+    PublicOrder memory order = orderManager.getOrder(uint256(orderFillRequest.orderHash));
     uint256 amountToApprove = orderFillRequest.amountIn;
     IERC20Permit(order.makerBuyToken).permit(
       _msgSender(),
@@ -393,7 +393,7 @@ contract FundSwap is IFundSwapEvents, IFundSwapErrors, AccessControl, Reentrancy
     OrderFillRequest memory orderFillRequest,
     address tokenDestination
   ) external returns (SwapResult memory result) {
-    PublicOrder memory order = orderManager.getOrder(orderFillRequest.orderHash);
+    PublicOrder memory order = orderManager.getOrder(uint256(orderFillRequest.orderHash));
     return _fillPublicOrderPartially(orderFillRequest, order, tokenDestination);
   }
 
@@ -426,7 +426,7 @@ contract FundSwap is IFundSwapEvents, IFundSwapErrors, AccessControl, Reentrancy
       inputAmount: orderFillRequest.amountIn
     });
 
-    orderManager.updateOrder(orderFillRequest.orderHash, order);
+    orderManager.updateOrder(uint256(orderFillRequest.orderHash), order);
 
     emit PublicOrderPartiallyFilled(
       orderFillRequest.orderHash,
@@ -483,7 +483,7 @@ contract FundSwap is IFundSwapEvents, IFundSwapErrors, AccessControl, Reentrancy
     // pay the order owner
     IERC20(modifiedOrder.makerBuyToken).safeTransferFrom(
       _msgSender(),
-      orderManager.ownerOfByHash(orderFillRequest.orderHash),
+      orderManager.ownerOf(uint256(orderFillRequest.orderHash)),
       orderFillRequest.amountIn
     );
 

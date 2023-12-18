@@ -2,6 +2,7 @@ import { loadFixture } from '@nomicfoundation/hardhat-network-helpers';
 import { expect } from 'chai';
 import { ethers } from 'hardhat';
 import { prepareTestEnv } from '../utils/testHelpers/fixtures/prepareTestEnv';
+import { bigintToBytes } from '../utils/testHelpers/bigintToBytes';
 
 describe('BatchExecutor', () => {
   it('Should allow to fill by market with exact amount of input tokens', async () => {
@@ -41,12 +42,8 @@ describe('BatchExecutor', () => {
       .connect(user2)
       .approve(fundSwapBatchExecutor.getAddress(), ethers.parseEther('1.5'));
 
-    const firstOrderHash = await fundSwapOrderManager.tokenIdToOrderHash(
-      await fundSwapOrderManager.tokenByIndex(0),
-    );
-    const secondOrderHash = await fundSwapOrderManager.tokenIdToOrderHash(
-      await fundSwapOrderManager.tokenByIndex(1),
-    );
+    const firstOrderHash = bigintToBytes(await fundSwapOrderManager.tokenByIndex(0));
+    const secondOrderHash = bigintToBytes(await fundSwapOrderManager.tokenByIndex(1));
 
     await fundSwapBatchExecutor.connect(user2).batchFillPublicOrders([
       {
@@ -123,12 +120,8 @@ describe('BatchExecutor', () => {
       .connect(user2)
       .approve(fundSwapBatchExecutor.getAddress(), ethers.parseUnits('150', 6));
 
-    const firstOrderHash = await fundSwapOrderManager.tokenIdToOrderHash(
-      await fundSwapOrderManager.tokenByIndex(0),
-    );
-    const secondOrderHash = await fundSwapOrderManager.tokenIdToOrderHash(
-      await fundSwapOrderManager.tokenByIndex(1),
-    );
+    const firstOrderHash = bigintToBytes(await fundSwapOrderManager.tokenByIndex(0));
+    const secondOrderHash = bigintToBytes(await fundSwapOrderManager.tokenByIndex(1));
 
     await fundSwapBatchExecutor.connect(user2).batchFillPublicOrders([
       {
@@ -189,9 +182,7 @@ describe('BatchExecutor', () => {
       creationTimestamp: 0,
     });
 
-    const firstOrderHash = await fundSwapOrderManager.tokenIdToOrderHash(
-      await fundSwapOrderManager.tokenByIndex(0),
-    );
+    const firstOrderHash = bigintToBytes(await fundSwapOrderManager.tokenByIndex(0));
 
     await wmaticToken
       .connect(user2)
@@ -235,9 +226,7 @@ describe('BatchExecutor', () => {
       .connect(user2)
       .approve(fundSwapBatchExecutor.getAddress(), ethers.parseUnits('100', 6));
 
-    const firstOrderHash = await fundSwapOrderManager.tokenIdToOrderHash(
-      await fundSwapOrderManager.tokenByIndex(0),
-    );
+    const firstOrderHash = bigintToBytes(await fundSwapOrderManager.tokenByIndex(0));
 
     await fundSwapBatchExecutor.connect(user2).batchFillPublicOrders([
       {
@@ -277,9 +266,7 @@ describe('BatchExecutor', () => {
       .connect(user2)
       .approve(fundSwapBatchExecutor.getAddress(), ethers.parseEther('0.5'));
 
-    const firstOrderHash = await fundSwapOrderManager.tokenIdToOrderHash(
-      await fundSwapOrderManager.tokenByIndex(0),
-    );
+    const firstOrderHash = bigintToBytes(await fundSwapOrderManager.tokenByIndex(0));
 
     await fundSwapBatchExecutor.connect(user2).batchFillPublicOrders([
       {
@@ -322,9 +309,7 @@ describe('BatchExecutor', () => {
       .connect(user2)
       .approve(fundSwapBatchExecutor.getAddress(), ethers.parseEther('0.5'));
 
-    const firstOrderHash = await fundSwapOrderManager.tokenIdToOrderHash(
-      await fundSwapOrderManager.tokenByIndex(0),
-    );
+    const firstOrderHash = bigintToBytes(await fundSwapOrderManager.tokenByIndex(0));
 
     await fundSwapBatchExecutor.connect(user2).batchFillPublicOrders([
       {
@@ -403,9 +388,7 @@ describe('BatchExecutor', () => {
       creationTimestamp: 0,
     });
 
-    const firstOrderHash = await fundSwapOrderManager.tokenIdToOrderHash(
-      await fundSwapOrderManager.tokenByIndex(0),
-    );
+    const firstOrderHash = bigintToBytes(await fundSwapOrderManager.tokenByIndex(0));
 
     const [user1, user2] = await ethers.getSigners();
     await fundSwapOrderManager.transferFrom(
@@ -479,12 +462,8 @@ describe('BatchExecutor', () => {
     const usdcMakerBalanceBefore = await usdcToken.balanceOf(maker.getAddress());
     const usdcTakerBalanceBefore = await usdcToken.balanceOf(taker.getAddress());
 
-    const firstOrderHash = await fundSwapOrderManager.tokenIdToOrderHash(
-      await fundSwapOrderManager.tokenByIndex(0),
-    );
-    const secondOrderHash = await fundSwapOrderManager.tokenIdToOrderHash(
-      await fundSwapOrderManager.tokenByIndex(1),
-    );
+    const firstOrderHash = bigintToBytes(await fundSwapOrderManager.tokenByIndex(0));
+    const secondOrderHash = bigintToBytes(await fundSwapOrderManager.tokenByIndex(1));
 
     await usdcToken
       .connect(taker)
@@ -579,12 +558,8 @@ describe('BatchExecutor', () => {
       .connect(taker)
       .approve(fundSwapBatchExecutor.getAddress(), ethers.parseUnits('100', 6));
 
-    const firstOrderHash = await fundSwapOrderManager.tokenIdToOrderHash(
-      await fundSwapOrderManager.tokenByIndex(0),
-    );
-    const secondOrderHash = await fundSwapOrderManager.tokenIdToOrderHash(
-      await fundSwapOrderManager.tokenByIndex(1),
-    );
+    const firstOrderHash = bigintToBytes(await fundSwapOrderManager.tokenByIndex(0));
+    const secondOrderHash = bigintToBytes(await fundSwapOrderManager.tokenByIndex(1));
 
     await fundSwapBatchExecutor.connect(taker).batchFillPublicOrdersInSequence([
       {
@@ -673,9 +648,7 @@ describe('BatchExecutor', () => {
       creationTimestamp: 0,
     });
 
-    const firstOrderHash = await fundSwapOrderManager.tokenIdToOrderHash(
-      await fundSwapOrderManager.tokenByIndex(0),
-    );
+    const firstOrderHash = bigintToBytes(await fundSwapOrderManager.tokenByIndex(0));
 
     await erc20Token
       .connect(user2)
